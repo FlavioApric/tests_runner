@@ -1,0 +1,44 @@
+name: Verify release
+
+# Read-only, no secret. Waits until a public release URL (an over-the-air manifest, a version file, a health endpoint)
+# contains a commit. Setup: variable RELEASE_URL.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit the release must reach (7-40 hex chars)'
+        required: true
+      wait_min:
+        description: 'Minutes to wait'
+        required: true
+        default: '40'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IN_SHA: ${{ inputs.sha }}
+      IN_WAIT: ${{ inputs.wait_min }}
+      RELEASE_URL: ${{ vars.RELEASE_URL }}
+    steps:
+      - name: Validate inputs
+        run: |
+          printf '%s' "$IN_SHA" | grep -Eq '^[0-9a-f]{7,40}$' || { echo "::error::sha must be 7-40 hex chars"; exit 1; }
+          printf '%s' "$IN_WAIT" | grep -Eq '^[0-9]{1,2}$' || { echo "::error::wait_min must be a number up to 99"; exit 1; }
+          printf '%s' "$RELEASE_URL" | grep -Eq '^https://' || { echo "::error::variable RELEASE_URL missing or not https"; exit 1; }
+      - name: Wait for the release
+        run: |
+          end=$(( $(date +%s) + IN_WAIT * 60 ))
+          while :; do
+            m=$(curl -fsS --max-time 20 "$RELEASE_URL" || true)
+            if echo "$m" | grep -q "${IN_SHA:0:7}"; then
+              echo "### release reached ${IN_SHA:0:7}" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if [ "$(date +%s)" -ge "$end" ]; then echo "::error::release did not reach ${IN_SHA:0:7}"; exit 1; fi
+            sleep 30
+          done

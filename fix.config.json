@@ -1,0 +1,48 @@
+{
+  "baseBranch": "main",
+  "remote": "origin",
+  "repo": "your-org/your-app",
+  "runnerRepo": "your-org/your-runner",
+  "branchPrefix": "fix/",
+  "worktreePrefix": "wt-",
+  "cardDir": "fix/bugs",
+  "cardTemplate": "fix/templates/BUG.md",
+  "logFiles": ["fix/LOG.md"],
+  "idPattern": "^BUG-[A-Za-z0-9_-]{1,36}$",
+  "idExample": "BUG-F20260101-1",
+  "slugPattern": "^[a-z0-9-]{2,40}$",
+  "deliveryOrder": ["none", "web", "function", "migration", "native"],
+  "blockingTypes": ["native"],
+  "deliveryRules": [
+    { "type": "native", "path": "^(android|ios)/" },
+    { "type": "native", "path": "^capacitor\\.config\\." },
+    { "type": "migration", "path": "^db/migrations/" },
+    { "type": "function", "path": "^functions/" },
+    { "type": "web", "path": "^(src|public)/" },
+    { "type": "web", "path": "^(index\\.html|vite\\.config\\.[a-z]+|package\\.json|package-lock\\.json)$" }
+  ],
+  "nativeDeps": { "manifest": "package.json", "pattern": "^@capacitor/", "type": "native" },
+  "checks": [
+    { "name": "lint", "cmd": "npm run lint", "paths": ["^src/"] },
+    { "name": "build", "cmd": "npm run build", "paths": ["^src/", "^public/", "^package\\.json$"] },
+    { "name": "unit tests", "cmd": "npm test", "paths": ["^src/", "^functions/", "^tests/unit/"] },
+    { "name": "migration tests (local stack)", "cmd": "npm run test:db", "kinds": ["migration"], "paths": ["^tests/db/"], "stack": true }
+  ],
+  "testPaths": ["^tests/", "^e2e/", "\\.(test|spec)\\.[cm]?[jt]sx?$"],
+  "resultFiles": ["^test-results/", "^playwright-report/", "^coverage/", "^graphify-out/", "^\\.fix-batch/"],
+  "requirementIdPattern": "R\\d+-\\d+",
+  "testsBranch": "test-plan",
+  "featureChecks": [
+    { "label": "decision recorded", "path": "^docs/DECISIONS\\.md$" },
+    { "label": "spec text updated", "path": "^docs/spec/" }
+  ],
+  "ownerActions": {
+    "none": "No delivery: tests, docs or scripts only.",
+    "web": "Owner: approve the runner workflow \"deploy-web\" with pr={pr} (or merge PR {pr} yourself). The web build carries it.",
+    "function": "Owner: approve the runner workflow \"deploy-functions\" for the changed functions. Web part, if any: as for web (PR {pr}).",
+    "migration": "Owner: approve the runner workflow \"ship-migration\" with the version (one additive migration). Then the function and web parts, in that order (PR {pr}).",
+    "native": "NOT a fast-path change: it needs a store build. Tell the owner before spending more time."
+  },
+  "readOnlyChecks": ["gh workflow run verify.yml --repo {runnerRepo} -f repo={repo} -f ref={branch}"],
+  "briefDir": ".fix-batch"
+}

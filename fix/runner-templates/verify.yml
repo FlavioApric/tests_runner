@@ -1,0 +1,90 @@
+name: Verify
+
+# Read-only. Runs the fix gate (scripts/fix/gate.mjs with the source repo's fix.config.json) on a ref of a source repo,
+# which may be private: the runner repo can be public and the source is read with a read-only token.
+# Setup: repository secret SOURCE_REPO_TOKEN (contents: read on the source repos), variable SOURCE_REPOS
+# (space-separated allowlist, for example "your-org/your-app your-user/your-app"). Optional variables:
+# INSTALL_DIRS (space-separated folders to install, default "."), NODE_VERSION (default 22).
+# workflow_call lets deploy-web.yml run the same gate before it asks for approval.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Source repository (owner/name, must be in vars.SOURCE_REPOS)'
+        required: true
+      ref:
+        description: 'Branch, tag or commit'
+        required: true
+        default: 'main'
+      base:
+        description: 'Base branch the fix is compared with'
+        required: true
+        default: 'main'
+  workflow_call:
+    inputs:
+      repo:
+        required: true
+        type: string
+      ref:
+        required: true
+        type: string
+      base:
+        required: false
+        type: string
+        default: 'main'
+    secrets:
+      SOURCE_REPO_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ inputs.repo }}-${{ inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IN_REPO: ${{ inputs.repo }}
+      IN_REF: ${{ inputs.ref }}
+      IN_BASE: ${{ inputs.base }}
+      ALLOWED: ${{ vars.SOURCE_REPOS }}
+      INSTALL_DIRS: ${{ vars.INSTALL_DIRS || '.' }}
+    steps:
+      - name: Validate input
+        run: |
+          printf '%s' "$IN_REF" | grep -Eq '^[A-Za-z0-9._/-]{1,100}$' || { echo "::error::ref has odd characters"; exit 1; }
+          printf '%s' "$IN_BASE" | grep -Eq '^[A-Za-z0-9._/-]{1,100}$' || { echo "::error::base has odd characters"; exit 1; }
+          case " $ALLOWED " in *" $IN_REPO "*) ;; *) echo "::error::repo not in vars.SOURCE_REPOS"; exit 1 ;; esac
+      - name: Checkout source (read-only token)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ vars.NODE_VERSION || '22' }}
+      - name: Install
+        run: |
+          set -euo pipefail
+          corepack enable
+          for d in $INSTALL_DIRS; do
+            [ -d "$d" ] || { echo "::error::INSTALL_DIRS: $d is not a folder"; exit 1; }
+            if [ -f "$d/pnpm-lock.yaml" ]; then (cd "$d" && pnpm install --frozen-lockfile)
+            elif [ -f "$d/yarn.lock" ]; then (cd "$d" && yarn install --immutable)
+            elif [ -f "$d/package-lock.json" ]; then (cd "$d" && npm ci)
+            else echo "no lockfile in $d: skipped"; fi
+          done
+      - name: Gate (delivery type, chosen checks)
+        run: |
+          set -euo pipefail
+          [ -f scripts/fix/gate.mjs ] && [ -f fix.config.json ] || { echo "::error::scripts/fix/gate.mjs or fix.config.json missing in the source"; exit 1; }
+          b=$(git merge-base HEAD "origin/$IN_BASE")
+          node scripts/fix/gate.mjs --list --base "$b" | tee -a "$GITHUB_STEP_SUMMARY"
+          node scripts/fix/gate.mjs --base "$b"

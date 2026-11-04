@@ -1,0 +1,104 @@
+name: Ship migration
+
+# Writes to PRODUCTION. Dispatch only. Example adapter: Supabase (Postgres). Applies ONE additive migration through the
+# Management API together with its schema_migrations row, in one request, so both happen or neither. Never bulk, never
+# `supabase db push`. A migration with DROP/TRUNCATE is refused unless allow_destructive=YES is typed.
+# For another database keep the inputs, the validation, the additive check and the Environment, and replace the
+# "Skip if already applied" and "Apply" steps.
+# Runs in the Environment "production" (required reviewer, created BEFORE the first run): it pauses until the owner approves.
+# Setup: secret SOURCE_REPO_TOKEN and variable SOURCE_REPOS (see verify.yml); variable SUPABASE_PROJECT_REF; optional
+# variable MIGRATIONS_DIR (default supabase/migrations); Environment secret SUPABASE_ACCESS_TOKEN.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Source repository (owner/name, must be in vars.SOURCE_REPOS)'
+        required: true
+      ref:
+        description: 'Branch, tag or commit that holds the migration'
+        required: true
+        default: 'main'
+      version:
+        description: 'Migration version (14 digits), exactly one'
+        required: true
+      allow_destructive:
+        description: 'Type YES to allow DROP/TRUNCATE in this migration'
+        required: false
+        default: ''
+      confirm:
+        description: 'Type YES to apply'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ship-migration
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      IN_REPO: ${{ inputs.repo }}
+      IN_REF: ${{ inputs.ref }}
+      IN_VERSION: ${{ inputs.version }}
+      IN_CONFIRM: ${{ inputs.confirm }}
+      IN_DESTRUCTIVE: ${{ inputs.allow_destructive }}
+      ALLOWED: ${{ vars.SOURCE_REPOS }}
+      MIGRATIONS_DIR: ${{ vars.MIGRATIONS_DIR || 'supabase/migrations' }}
+      PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [ "$IN_CONFIRM" = "YES" ] || { echo "::error::confirm must be YES"; exit 1; }
+          case " $ALLOWED " in *" $IN_REPO "*) ;; *) echo "::error::repo not in vars.SOURCE_REPOS"; exit 1 ;; esac
+          printf '%s' "$IN_REF" | grep -Eq '^[A-Za-z0-9._/-]{1,100}$' || { echo "::error::ref has odd characters"; exit 1; }
+          printf '%s' "$IN_VERSION" | grep -Eq '^[0-9]{14}$' || { echo "::error::version must be exactly 14 digits"; exit 1; }
+          printf '%s' "$MIGRATIONS_DIR" | grep -Eq '^[A-Za-z0-9._/-]{1,100}$' || { echo "::error::MIGRATIONS_DIR has odd characters"; exit 1; }
+          printf '%s' "$PROJECT_REF" | grep -Eq '^[a-z0-9]{20}$' || { echo "::error::SUPABASE_PROJECT_REF missing or malformed"; exit 1; }
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::SUPABASE_ACCESS_TOKEN missing"; exit 1; }
+      - name: Checkout source (read-only token)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          persist-credentials: false
+      - name: Find the file and check it is additive
+        run: |
+          set -euo pipefail
+          n=$(find "$MIGRATIONS_DIR" -maxdepth 1 -name "${IN_VERSION}_*.sql" | wc -l)
+          [ "$n" -eq 1 ] || { echo "::error::expected exactly one file for $IN_VERSION, found $n"; exit 1; }
+          f=$(find "$MIGRATIONS_DIR" -maxdepth 1 -name "${IN_VERSION}_*.sql")
+          echo "FILE=$f" >> "$GITHUB_ENV"
+          PATTERN='(^|[^A-Za-z_])(DROP[[:space:]]+(TABLE|COLUMN|SCHEMA|TYPE|VIEW|INDEX|CONSTRAINT|POLICY|TRIGGER|FUNCTION)|TRUNCATE|ALTER[[:space:]]+TABLE[^;]*[[:space:]]DROP[[:space:]])'
+          if grep -Ein "$PATTERN" "$f"; then
+            [ "$IN_DESTRUCTIVE" = "YES" ] || { echo "::error::non-additive migration refused; review it and re-run with allow_destructive=YES"; exit 1; }
+            echo "::warning::allow_destructive=YES"
+          fi
+      - name: Skip if already applied
+        run: |
+          set -euo pipefail
+          # the version was validated as 14 digits above, so it is safe inside the SQL text
+          jq -n --arg q "select 1 from supabase_migrations.schema_migrations where version = '$IN_VERSION'" '{query:$q}' > q.json
+          out=$(curl --fail-with-body -sS --max-time 60 -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" --data @q.json)
+          if [ "$out" != "[]" ]; then echo "SKIP=1" >> "$GITHUB_ENV"; echo "$IN_VERSION is already applied; nothing to do."; fi
+      - name: Apply
+        if: ${{ env.SKIP != '1' }}
+        run: |
+          set -euo pipefail
+          n=$(basename "$FILE" .sql | cut -c16-)
+          {
+            cat "$FILE"
+            printf '\n;\ninsert into supabase_migrations.schema_migrations(version, name) values (%s, %s) on conflict (version) do nothing;\n' "'$IN_VERSION'" "'$n'"
+          } > body.sql
+          jq -n --rawfile q body.sql '{query:$q}' > body.json
+          curl --fail-with-body -sS --max-time 300 -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" --data @body.json > /dev/null
+          echo "applied $IN_VERSION" | tee -a "$GITHUB_STEP_SUMMARY"

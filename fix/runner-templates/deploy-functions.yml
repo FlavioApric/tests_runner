@@ -1,0 +1,71 @@
+name: Deploy functions
+
+# Writes to PRODUCTION. Dispatch only. Example adapter: Supabase edge functions. For another provider keep the inputs,
+# the validation and the Environment, and replace the "Set up the CLI" and "Deploy" steps.
+# Runs in the Environment "production", which must have a required reviewer (create it BEFORE the first run: a missing
+# environment is created without one and nothing pauses). The job pauses until the owner approves.
+# Setup: secret SOURCE_REPO_TOKEN and variable SOURCE_REPOS (see verify.yml); variable SUPABASE_PROJECT_REF;
+# Environment secret SUPABASE_ACCESS_TOKEN.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Source repository (owner/name, must be in vars.SOURCE_REPOS)'
+        required: true
+      ref:
+        description: 'Branch, tag or commit'
+        required: true
+        default: 'main'
+      functions:
+        description: 'Space-separated function names'
+        required: true
+      confirm:
+        description: 'Type YES to deploy'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      IN_REPO: ${{ inputs.repo }}
+      IN_REF: ${{ inputs.ref }}
+      IN_FUNCTIONS: ${{ inputs.functions }}
+      IN_CONFIRM: ${{ inputs.confirm }}
+      ALLOWED: ${{ vars.SOURCE_REPOS }}
+      PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [ "$IN_CONFIRM" = "YES" ] || { echo "::error::confirm must be YES"; exit 1; }
+          case " $ALLOWED " in *" $IN_REPO "*) ;; *) echo "::error::repo not in vars.SOURCE_REPOS"; exit 1 ;; esac
+          printf '%s' "$IN_REF" | grep -Eq '^[A-Za-z0-9._/-]{1,100}$' || { echo "::error::ref has odd characters"; exit 1; }
+          printf '%s' "$IN_FUNCTIONS" | grep -Eq '^[a-z0-9_-]+( [a-z0-9_-]+)*$' || { echo "::error::functions must be space-separated names"; exit 1; }
+          printf '%s' "$PROJECT_REF" | grep -Eq '^[a-z0-9]{20}$' || { echo "::error::SUPABASE_PROJECT_REF missing or malformed"; exit 1; }
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::SUPABASE_ACCESS_TOKEN missing"; exit 1; }
+      - name: Checkout source (read-only token)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          persist-credentials: false
+      - name: Set up the CLI
+        uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.121.0
+      - name: Deploy
+        run: |
+          # verify_jwt per function comes from supabase/config.toml: no --no-verify-jwt here
+          # shellcheck disable=SC2086
+          supabase functions deploy $IN_FUNCTIONS --project-ref "$PROJECT_REF"

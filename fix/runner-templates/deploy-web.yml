@@ -1,0 +1,119 @@
+name: Deploy web
+
+# Writes to PRODUCTION. Dispatch only. Generic web adapter: gate the PR (verify.yml), then, after the owner approves the
+# Environment "production", merge the PR and call the hosting provider's deploy hook; optionally wait until a public
+# release URL shows the merged commit.
+# Setup: everything verify.yml needs, plus in the Environment "production" (required reviewer, created BEFORE the first run):
+#   SOURCE_WRITE_TOKEN  pull requests: write on the source repo (merges the PR)
+#   DEPLOY_HOOK_URL     optional: the provider's build/deploy hook (leave unset when merging already triggers the build)
+# Optional variable RELEASE_URL: a public URL (manifest, version file) whose body contains the deployed commit.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Source repository (owner/name, must be in vars.SOURCE_REPOS)'
+        required: true
+      pr:
+        description: 'PR number on that repository'
+        required: true
+      base:
+        description: 'Base branch of the PR'
+        required: true
+        default: 'main'
+      confirm:
+        description: 'Type YES to ship'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      branch: ${{ steps.pr.outputs.branch }}
+    env:
+      IN_REPO: ${{ inputs.repo }}
+      IN_PR: ${{ inputs.pr }}
+      IN_CONFIRM: ${{ inputs.confirm }}
+      ALLOWED: ${{ vars.SOURCE_REPOS }}
+      GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
+    steps:
+      - name: Validate and read the PR
+        id: pr
+        run: |
+          set -euo pipefail
+          [ "$IN_CONFIRM" = "YES" ] || { echo "::error::confirm must be YES"; exit 1; }
+          case " $ALLOWED " in *" $IN_REPO "*) ;; *) echo "::error::repo not in vars.SOURCE_REPOS"; exit 1 ;; esac
+          printf '%s' "$IN_PR" | grep -Eq '^[0-9]{1,6}$' || { echo "::error::pr must be a number"; exit 1; }
+          b=$(gh api "repos/$IN_REPO/pulls/$IN_PR" --jq 'select(.state=="open") | .head.ref')
+          [ -n "$b" ] || { echo "::error::PR $IN_PR is not open"; exit 1; }
+          printf '%s' "$b" | grep -Eq '^[A-Za-z0-9._/-]{1,100}$' || { echo "::error::odd branch name"; exit 1; }
+          echo "branch=$b" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: resolve
+    uses: ./.github/workflows/verify.yml
+    with:
+      repo: ${{ inputs.repo }}
+      ref: ${{ needs.resolve.outputs.branch }}
+      base: ${{ inputs.base }}
+    secrets:
+      SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
+
+  ship:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    outputs:
+      sha: ${{ steps.merge.outputs.sha }}
+    env:
+      IN_REPO: ${{ inputs.repo }}
+      IN_PR: ${{ inputs.pr }}
+      SOURCE_WRITE_TOKEN: ${{ secrets.SOURCE_WRITE_TOKEN }}
+      DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+    steps:
+      - name: Merge the PR
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.SOURCE_WRITE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_WRITE_TOKEN" || { echo "::error::Environment secret SOURCE_WRITE_TOKEN missing"; exit 1; }
+          sha=$(gh api -X PUT "repos/$IN_REPO/pulls/$IN_PR/merge" -f merge_method=merge --jq .sha)
+          printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::merge returned no commit"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "merged PR $IN_PR as ${sha:0:7}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Call the deploy hook
+        run: |
+          set -euo pipefail
+          if [ -z "$DEPLOY_HOOK_URL" ]; then echo "no DEPLOY_HOOK_URL: the merge triggers the build"; exit 0; fi
+          curl --fail-with-body -sS --max-time 60 -X POST "$DEPLOY_HOOK_URL" > /dev/null
+          echo "deploy hook called" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: ship
+    if: ${{ vars.RELEASE_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SHA: ${{ needs.ship.outputs.sha }}
+      RELEASE_URL: ${{ vars.RELEASE_URL }}
+    steps:
+      - name: Wait for the release URL to show the commit
+        run: |
+          end=$(( $(date +%s) + 40 * 60 ))
+          while :; do
+            if curl -fsS --max-time 20 "$RELEASE_URL" | grep -q "${SHA:0:7}"; then
+              echo "### release reached ${SHA:0:7}" >> "$GITHUB_STEP_SUMMARY"; exit 0
+            fi
+            [ "$(date +%s)" -lt "$end" ] || { echo "::error::release did not reach ${SHA:0:7}"; exit 1; }
+            sleep 30
+          done

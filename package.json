@@ -1,0 +1,11 @@
+{
+  "name": "tests-runner-fix",
+  "private": true,
+  "type": "module",
+  "description": "Generic bug-fix playbook: config-driven start/gate/ship/batch scripts, skills and runner templates.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test \"tests/*.test.mjs\"",
+    "check": "node --check scripts/fix/lib.mjs && node --check scripts/fix/start.mjs && node --check scripts/fix/gate.mjs && node --check scripts/fix/ship.mjs && node --check scripts/fix/fix-batch.mjs"
+  }
+}
