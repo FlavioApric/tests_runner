@@ -1,0 +1,7 @@
+{
+ "screen": "{{SCREEN}}",
+ "route": "/",
+ "keys": {
+  "header": { "locator": { "role": "heading", "name": "TODO(qa-pack)" }, "checks": { "fontSizePx": 24, "fontWeight": 700 } }
+ }
+}

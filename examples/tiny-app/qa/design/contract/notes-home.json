@@ -1,0 +1,12 @@
+{
+ "screen": "notes-home",
+ "route": "/",
+ "keys": {
+  "header": { "locator": { "role": "heading", "name": "Tiny Notes" }, "checks": { "text": "Tiny Notes", "fontSizePx": 24, "fontWeight": 700, "colorToken": "on-brand", "contrastMin": 4.5 } },
+  "headerBar": { "locator": "header", "checks": { "backgroundToken": "brand" } },
+  "signIn": { "locator": { "role": "button", "name": "Sign in" }, "checks": { "minTouch": 44, "backgroundToken": "brand", "colorToken": "on-brand", "radiusToken": "radius", "contrastMin": 4.5 } },
+  "addNote": { "locator": { "role": "button", "name": "Add note" }, "checks": { "minTouch": 44, "backgroundToken": "brand", "colorToken": "on-brand", "contrastMin": 4.5 } },
+  "count": { "locator": { "testid": "count" }, "checks": { "colorToken": "muted", "contrastMin": 4.5, "minFontPx": 16, "textMatches": "^\\d+ notes?$" } },
+  "who": { "locator": "#who", "checks": { "colorToken": "ink", "contrastMin": 4.5 } }
+ }
+}

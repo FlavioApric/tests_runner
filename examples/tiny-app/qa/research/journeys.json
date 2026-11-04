@@ -1,0 +1,13 @@
+{
+ "schema": "qa-pack/journeys@1",
+ "journeys": {
+  "notes-basics": {
+   "id": "J01",
+   "name": "notes basics"
+  },
+  "access": {
+   "id": "J02",
+   "name": "access"
+  }
+ }
+}

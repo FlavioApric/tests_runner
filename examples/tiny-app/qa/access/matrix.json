@@ -1,0 +1,242 @@
+{
+ "schema": "qa-pack/access@1",
+ "adapter": "express",
+ "personas": [
+  {
+   "key": "GUEST",
+   "role": "guest",
+   "session": false
+  },
+  {
+   "key": "MEMBER",
+   "role": "member",
+   "session": true
+  },
+  {
+   "key": "MEMBER_B",
+   "role": "member",
+   "session": true
+  },
+  {
+   "key": "ADMIN",
+   "role": "admin",
+   "session": true
+  }
+ ],
+ "routes": [
+  {
+   "method": "GET",
+   "path": "/api/admin/stats",
+   "allow": [
+    "admin"
+   ],
+   "from": "api/server.mjs:50"
+  },
+  {
+   "method": "GET",
+   "path": "/api/health",
+   "allow": "all",
+   "from": "api/server.mjs:33"
+  },
+  {
+   "method": "POST",
+   "path": "/api/login",
+   "allow": "all",
+   "from": "api/server.mjs:34"
+  },
+  {
+   "method": "GET",
+   "path": "/api/me",
+   "allow": "session",
+   "from": "api/server.mjs:42"
+  },
+  {
+   "method": "GET",
+   "path": "/api/notes",
+   "allow": "session",
+   "from": "api/server.mjs:43"
+  },
+  {
+   "method": "POST",
+   "path": "/api/notes",
+   "allow": "session",
+   "from": "api/server.mjs:44"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/notes/:p1",
+   "allow": "session",
+   "from": "api/server.mjs:49"
+  }
+ ],
+ "cells": [
+  {
+   "method": "GET",
+   "path": "/api/admin/stats",
+   "persona": "GUEST",
+   "expect": "status:401"
+  },
+  {
+   "method": "GET",
+   "path": "/api/admin/stats",
+   "persona": "MEMBER",
+   "expect": "status:403"
+  },
+  {
+   "method": "GET",
+   "path": "/api/admin/stats",
+   "persona": "MEMBER_B",
+   "expect": "status:403"
+  },
+  {
+   "method": "GET",
+   "path": "/api/admin/stats",
+   "persona": "ADMIN",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/health",
+   "persona": "GUEST",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/health",
+   "persona": "MEMBER",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/health",
+   "persona": "MEMBER_B",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/health",
+   "persona": "ADMIN",
+   "expect": "allow"
+  },
+  {
+   "method": "POST",
+   "path": "/api/login",
+   "persona": "GUEST",
+   "expect": "allow"
+  },
+  {
+   "method": "POST",
+   "path": "/api/login",
+   "persona": "MEMBER",
+   "expect": "allow"
+  },
+  {
+   "method": "POST",
+   "path": "/api/login",
+   "persona": "MEMBER_B",
+   "expect": "allow"
+  },
+  {
+   "method": "POST",
+   "path": "/api/login",
+   "persona": "ADMIN",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/me",
+   "persona": "GUEST",
+   "expect": "status:401"
+  },
+  {
+   "method": "GET",
+   "path": "/api/me",
+   "persona": "MEMBER",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/me",
+   "persona": "MEMBER_B",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/me",
+   "persona": "ADMIN",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/notes",
+   "persona": "GUEST",
+   "expect": "status:401"
+  },
+  {
+   "method": "GET",
+   "path": "/api/notes",
+   "persona": "MEMBER",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/notes",
+   "persona": "MEMBER_B",
+   "expect": "allow"
+  },
+  {
+   "method": "GET",
+   "path": "/api/notes",
+   "persona": "ADMIN",
+   "expect": "allow"
+  },
+  {
+   "method": "POST",
+   "path": "/api/notes",
+   "persona": "GUEST",
+   "expect": "status:401"
+  },
+  {
+   "method": "POST",
+   "path": "/api/notes",
+   "persona": "MEMBER",
+   "expect": "allow"
+  },
+  {
+   "method": "POST",
+   "path": "/api/notes",
+   "persona": "MEMBER_B",
+   "expect": "allow"
+  },
+  {
+   "method": "POST",
+   "path": "/api/notes",
+   "persona": "ADMIN",
+   "expect": "allow"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/notes/:p1",
+   "persona": "GUEST",
+   "expect": "status:401"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/notes/:p1",
+   "persona": "MEMBER",
+   "expect": "allow"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/notes/:p1",
+   "persona": "MEMBER_B",
+   "expect": "allow"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/notes/:p1",
+   "persona": "ADMIN",
+   "expect": "allow"
+  }
+ ]
+}

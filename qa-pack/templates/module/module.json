@@ -1,0 +1,15 @@
+{
+ "id": "{{ID}}",
+ "name": "{{NAME}}",
+ "area": "{{AREA}}",
+ "status": "draft",
+ "cases": ["{{CASE}}"],
+ "requirements": [],
+ "designScreens": ["{{SCREEN}}"],
+ "compiled": [],
+ "fixtures": [],
+ "backend": { "tests": [] },
+ "mobile": { "maestro": [] },
+ "dependsOn": [],
+ "notes": "Status path: draft -> authored -> refined -> compiled -> green -> accepted. A draft fails `pack validate --strict`."
+}

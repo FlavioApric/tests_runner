@@ -1,0 +1,16 @@
+{
+ "schema": "qa-pack/gates@1",
+ "note": "A gate is green only when every flow step it lists is done (or not applicable: its `when` is false) and every evidence file it lists exists in <paths.gateEvidence> SIGNED (a line `Signed: <who> <yyyy-mm-dd>`, and no TODO or UNSIGNED). Profiles are chosen in qa.config.json gates.profiles.",
+ "gates": [
+  { "id": "G0", "profile": "core", "name": "Consistency: inventory, requirements, cases, contracts and coverage agree (0 requirements without a test)", "flowSteps": ["s1-inventory", "s2-requirements", "s3-validate", "s5-coverage"] },
+  { "id": "G1", "profile": "core", "name": "Decisions closed (0 open rows in decisions.md)", "flowSteps": ["g1-decisions"] },
+  { "id": "G2", "profile": "core", "name": "Static and unit suites green", "flowSteps": ["@static"] },
+  { "id": "G3", "profile": "core", "name": "Backend layers green, 0 scaffold files (n/a when backend.adapter is none)", "flowSteps": ["s6-backend"] },
+  { "id": "G4", "profile": "core", "name": "Browser suites and access matrix green, design contract approved", "flowSteps": ["s6-access", "s6-browser"], "evidence": ["design-approved.md"] },
+  { "id": "G5", "profile": "mobile", "name": "Mobile: Maestro series green N/N and device checklist signed", "flowSteps": ["s6-mobile"], "evidence": ["maestro-series.md", "device-checklist.md"] },
+  { "id": "G6", "profile": "core", "name": "Reliability: browser suite repeated with no retries", "flowSteps": ["s6-reliability"] },
+  { "id": "G7", "profile": "store", "name": "Production backend aligned before the release (migrations, functions, flags)", "evidence": ["prod-backend-aligned.md"] },
+  { "id": "G8", "profile": "store", "name": "Legal and store forms complete (privacy, data safety, age rating)", "evidence": ["legal-data.md", "store-forms.md"] },
+  { "id": "G9", "profile": "store", "name": "Published proof (store listing live, version matches)", "evidence": ["published-proof.md"] }
+ ]
+}

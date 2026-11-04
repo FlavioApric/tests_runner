@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tiny Notes</title>
+  <style>
+    :root { --ink: #1b1f24; --muted: #57606a; --brand: #0b5cad; --surface: #ffffff; --page: #f3f5f7; --radius: 8px; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.4 system-ui, sans-serif; color: var(--ink); background: var(--page); }
+    header { background: var(--brand); color: #fff; padding: 16px; }
+    h1 { margin: 0; font-size: 24px; font-weight: 700; }
+    main { max-width: 640px; margin: 0 auto; padding: 16px; }
+    form { display: flex; gap: 8px; margin: 12px 0; }
+    input { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--muted); border-radius: var(--radius); font-size: 16px; }
+    button { min-height: 44px; min-width: 44px; padding: 0 16px; border: 0; border-radius: var(--radius); background: var(--brand); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+    button.link { background: none; color: var(--brand); min-width: 0; padding: 0 8px; }
+    .error { color: #a40e26; min-height: 1.4em; margin: 0; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { display: flex; justify-content: space-between; align-items: center; background: var(--surface); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 8px; }
+    .count { color: var(--muted); margin: 8px 0; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header><h1>Tiny Notes</h1></header>
+  <main>
+    <section id="login">
+      <h2>Sign in</h2>
+      <form id="login-form">
+        <input name="user" aria-label="User" autocomplete="username" required>
+        <input name="password" aria-label="Password" type="password" autocomplete="current-password" required>
+        <button type="submit">Sign in</button>
+      </form>
+      <p class="error" id="login-error" role="alert"></p>
+    </section>
+    <section id="notes" hidden>
+      <p>Signed in as <strong id="who"></strong></p>
+      <form id="note-form">
+        <input name="title" aria-label="Note title" maxlength="200" placeholder="Write a note">
+        <button type="submit">Add note</button>
+      </form>
+      <p class="error" id="note-error" role="alert"></p>
+      <p class="count" id="count" data-testid="count"></p>
+      <ul id="list" aria-label="Notes"></ul>
+    </section>
+  </main>
+  <script>
+    const $ = (s) => document.querySelector(s)
+    const api = (p, o = {}) => fetch(p, { ...o, headers: { 'content-type': 'application/json' } })
+    async function refresh() {
+      const r = await api('/api/notes')
+      if (r.status === 401) { $('#login').hidden = false; $('#notes').hidden = true; return }
+      const { notes, label } = await r.json()
+      const me = await (await api('/api/me')).json()
+      $('#who').textContent = me.user
+      $('#login').hidden = true; $('#notes').hidden = false
+      $('#count').textContent = label
+      $('#list').replaceChildren(...notes.map((n) => {
+        const li = document.createElement('li'); li.dataset.id = n.id
+        const t = document.createElement('span'); t.textContent = n.title
+        const b = document.createElement('button'); b.className = 'link'; b.textContent = 'Delete'; b.setAttribute('aria-label', `Delete ${n.title}`)
+        b.onclick = async () => { await api(`/api/notes/${n.id}`, { method: 'DELETE' }); refresh() }
+        li.append(t, b); return li
+      }))
+    }
+    $('#login-form').onsubmit = async (e) => {
+      e.preventDefault()
+      const f = new FormData(e.target)
+      const r = await api('/api/login', { method: 'POST', body: JSON.stringify({ user: f.get('user'), password: f.get('password') }) })
+      $('#login-error').textContent = r.ok ? '' : (await r.json()).error
+      if (r.ok) refresh()
+    }
+    $('#note-form').onsubmit = async (e) => {
+      e.preventDefault()
+      const r = await api('/api/notes', { method: 'POST', body: JSON.stringify({ title: e.target.title.value }) })
+      $('#note-error').textContent = r.ok ? '' : (await r.json()).error
+      if (r.ok) { e.target.reset(); refresh() }
+    }
+    refresh()
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+ "schema": "qa-pack/pack@1",
+ "note": "The generic flow. Every step runs with cwd = the project dir. {{PACK}} = path of qa-pack relative to the project, {{PW_CONFIG}} = qa.config playwright.config. `requires` are capabilities (pack capabilities): a missing one makes the step DEFERRED, never green. `when` names a qa.config switch (router, backend, mobile, graph): false makes the step n/a. `fleet.kind` (static|stack|mobile) makes it a cloud unit; `fleet.shards: true` splits it into playwright.shards units. Project steps come from qa.config flow.extra; flow.skip removes steps by id.",
+ "steps": [
+  { "id": "s1-inventory", "phase": "S1", "name": "Function inventory up to date", "requires": ["node"], "cmd": ["node", "{{PACK}}/scripts/inventory.mjs", "--check"], "fleet": { "kind": "static" }, "tags": ["static"] },
+  { "id": "s1-graph", "phase": "S1", "name": "Knowledge graph (graphify, optional)", "requires": ["graphify"], "when": "graph", "cmd": ["node", "{{PACK}}/scripts/graph.mjs"], "optional": true },
+  { "id": "s2-briefs", "phase": "S2", "name": "Research briefs rendered from qa.config areas", "requires": ["node"], "cmd": ["node", "{{PACK}}/scripts/research-brief.mjs", "--check"], "fleet": { "kind": "static" }, "tags": ["static"] },
+  { "id": "s2-requirements", "phase": "S2", "name": "requirements.json consolidated from the research", "requires": ["node"], "cmd": ["node", "{{PACK}}/scripts/consolidate.mjs", "--check"], "fleet": { "kind": "static" }, "tags": ["static"] },
+  { "id": "s3-validate", "phase": "S3-S5", "name": "Modules, cases and design contracts valid (strict)", "requires": ["node"], "cmd": ["node", "{{PACK}}/runners/pack.mjs", "validate", "--strict"], "fleet": { "kind": "static" }, "tags": ["static"] },
+  { "id": "s5-coverage", "phase": "S5", "name": "Every requirement linked to a test", "requires": ["node"], "cmd": ["node", "{{PACK}}/scripts/coverage-link.mjs", "--check"], "fleet": { "kind": "static" }, "tags": ["static"] },
+  { "id": "g1-decisions", "phase": "G1", "name": "0 open decisions", "requires": ["node"], "cmd": ["node", "{{PACK}}/runners/pack.mjs", "decisions", "--check"] },
+  { "id": "s6-access", "phase": "S6", "name": "Access matrix extracted from the router", "requires": ["node"], "when": "router", "cmd": ["node", "{{PACK}}/scripts/access-matrix.mjs", "--check"], "fleet": { "kind": "static" }, "tags": ["static"] },
+  { "id": "s6-backend", "phase": "S6", "name": "Backend layers (adapter)", "requires": ["node", "stack"], "when": "backend", "cmd": ["node", "{{PACK}}/runners/backend.mjs"], "fleet": { "kind": "stack" }, "tags": ["backend"] },
+  { "id": "s6-browser", "phase": "S6", "name": "Compiled browser suites (all projects)", "requires": ["node", "playwright-browser", "personas"], "cmd": ["npx", "playwright", "test", "-c", "{{PW_CONFIG}}"], "fleet": { "kind": "stack", "shards": true }, "tags": ["browser"] },
+  { "id": "s6-reliability", "phase": "S6", "name": "Browser suites repeated 3x, no retries", "requires": ["node", "playwright-browser", "personas"], "cmd": ["npx", "playwright", "test", "-c", "{{PW_CONFIG}}", "--repeat-each=3", "--retries=0"], "fleet": { "kind": "stack" }, "tags": ["browser", "reliability"] },
+  { "id": "s6-mobile", "phase": "S6", "name": "Maestro series on an Android emulator", "requires": ["adb", "emulator", "maestro"], "when": "mobile", "cmd": ["node", "{{PACK}}/scripts/maestro-run.mjs"], "fleet": { "kind": "mobile" }, "tags": ["mobile"] },
+  { "id": "s7-plans", "phase": "S7", "name": "Execution plans up to date", "requires": ["node"], "cmd": ["node", "{{PACK}}/scripts/plans.mjs", "--check"], "fleet": { "kind": "static" }, "tags": ["static"] },
+  { "id": "s7-fleet", "phase": "S7", "name": "Fleet units up to date and valid", "requires": ["node"], "cmd": ["node", "{{PACK}}/runners/pack.mjs", "fleet-units", "--check"], "fleet": { "kind": "static" }, "tags": ["static"] }
+ ]
+}

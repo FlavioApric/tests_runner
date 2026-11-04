@@ -1,0 +1,39 @@
+{
+ "$schema": "./qa-pack/schema/qa.config.schema.json",
+ "schema": "qa-pack/qa.config@1",
+ "project": "my-app",
+ "app": {
+  "src": ["src"],
+  "languages": ["js", "ts"],
+  "exclude": ["tests/", "qa/", "node_modules/"],
+  "docs": ["docs/SPEC.md"],
+  "precedence": "docs/SPEC.md wins over the code"
+ },
+ "stack": { "kind": "node" },
+ "preview": { "url": "http://127.0.0.1:5173", "start": "npm run dev -- --port 5173", "timeoutMs": 60000, "reuse": true },
+ "ports": { "web": 5173 },
+ "env": { "prefix": "QA_", "personasFile": ".env.qa.personas.local", "personasExample": ".env.qa.personas.example", "secrets": [] },
+ "personas": [
+  { "key": "GUEST", "role": "guest", "session": false },
+  { "key": "MEMBER", "role": "member" },
+  { "key": "ADMIN", "role": "admin" }
+ ],
+ "ids": { "requirement": "R\\d+-\\d{3}", "module": "J\\d{2}", "modulePrefix": "J", "modulePad": 2 },
+ "areas": [
+  { "id": "R1", "slug": "core", "title": "Core feature", "docs": ["docs/SPEC.md#1"], "code": ["src"] }
+ ],
+ "playwright": {
+  "config": "playwright.config.mjs",
+  "shards": 2,
+  "workers": 1,
+  "browsers": "chromium",
+  "projects": [
+   { "name": "mobile", "device": "Pixel 7", "use": { "viewport": { "width": 390, "height": 844 }, "deviceScaleFactor": 2 } },
+   { "name": "desktop", "device": "Desktop Chrome" }
+  ]
+ },
+ "backend": { "adapter": "none" },
+ "mobile": { "enabled": false },
+ "gates": { "profiles": ["core"] },
+ "fleet": { "node": "22", "results": ["qa-fleet-results", "test-results", "qa/evidence"], "explore": false }
+}

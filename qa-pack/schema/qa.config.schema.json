@@ -1,0 +1,515 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "qa-pack/qa.config@1",
+ "title": "qa.config.json: every project-specific constant of the test-plan pipeline",
+ "type": "object",
+ "required": [
+  "schema",
+  "project",
+  "app",
+  "preview",
+  "personas",
+  "ids",
+  "areas"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "$schema": {
+   "type": "string"
+  },
+  "schema": {
+   "const": "qa-pack/qa.config@1"
+  },
+  "project": {
+   "type": "string",
+   "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+   "description": "Short project name (fleet project, report titles)"
+  },
+  "app": {
+   "type": "object",
+   "required": [
+    "src"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "src": {
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "type": "string"
+     },
+     "description": "Source folders (relative to the project) scanned by S1"
+    },
+    "languages": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "js",
+       "ts",
+       "py"
+      ]
+     }
+    },
+    "exclude": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Path fragments skipped by the inventory"
+    },
+    "docs": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Spec / architecture documents (read-only inputs of S2)"
+    },
+    "precedence": {
+     "type": "string",
+     "description": "Which document wins when docs disagree"
+    },
+    "releaseVersionEnv": {
+     "type": "string"
+    }
+   }
+  },
+  "stack": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "kind": {
+     "enum": [
+      "none",
+      "node",
+      "docker-compose",
+      "supabase"
+     ]
+    },
+    "up": {
+     "type": "string",
+     "description": "Shell command that brings the whole local environment up"
+    },
+    "down": {
+     "type": "string"
+    },
+    "preflight": {
+     "type": "string"
+    },
+    "dbContainer": {
+     "type": "string",
+     "description": "Docker container of the local database (capability 'stack')"
+    },
+    "apiUrl": {
+     "type": "string"
+    },
+    "envFile": {
+     "type": "string",
+     "description": "Local env file written by the stack (gitignored)"
+    },
+    "mailUrl": {
+     "type": "string"
+    }
+   }
+  },
+  "preview": {
+   "type": "object",
+   "required": [
+    "url"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "url": {
+     "type": "string",
+     "pattern": "^https?://"
+    },
+    "start": {
+     "type": "string",
+     "description": "Command that serves the app (Playwright webServer); empty = must already run"
+    },
+    "timeoutMs": {
+     "type": "integer",
+     "minimum": 1000
+    },
+    "reuse": {
+     "type": "boolean"
+    }
+   }
+  },
+  "ports": {
+   "type": "object",
+   "additionalProperties": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 65535
+   }
+  },
+  "env": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "prefix": {
+     "type": "string",
+     "pattern": "^[A-Z][A-Z0-9_]*_$",
+     "description": "Prefix of every persona / pipeline variable, e.g. QA_"
+    },
+    "personasFile": {
+     "type": "string",
+     "description": "Gitignored file with <PREFIX><PERSONA>_USER / _PASSWORD"
+    },
+    "personasExample": {
+     "type": "string",
+     "description": "Committed file with PUBLIC demo values (example apps only)"
+    },
+    "secrets": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+     },
+     "description": "Secret NAMES the pipeline may need (values never stored here)"
+    }
+   }
+  },
+  "personas": {
+   "type": "array",
+   "minItems": 1,
+   "items": {
+    "type": "object",
+    "required": [
+     "key",
+     "role"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "key": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+     },
+     "role": {
+      "type": "string"
+     },
+     "session": {
+      "type": "boolean",
+      "description": "false = guest (no login)"
+     },
+     "note": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "ids": {
+   "type": "object",
+   "required": [
+    "requirement",
+    "module"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "requirement": {
+     "type": "string",
+     "description": "Regex (no anchors) of a requirement id, e.g. R\\d+-\\d{3}"
+    },
+    "module": {
+     "type": "string",
+     "description": "Regex (no anchors) of a module / journey id, e.g. J\\d{2,3}"
+    },
+    "modulePrefix": {
+     "type": "string"
+    },
+    "modulePad": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 4
+    }
+   }
+  },
+  "areas": {
+   "type": "array",
+   "minItems": 1,
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "slug",
+     "title"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]*$"
+     },
+     "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+     },
+     "title": {
+      "type": "string"
+     },
+     "docs": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "code": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "focus": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "paths": {
+   "type": "object",
+   "additionalProperties": {
+    "type": "string"
+   }
+  },
+  "playwright": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "config": {
+     "type": "string"
+    },
+    "shards": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 64
+    },
+    "workers": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "browsers": {
+     "type": "string",
+     "pattern": "^[a-z,]+$"
+    },
+    "projects": {
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "type": "object",
+      "required": [
+       "name",
+       "device"
+      ],
+      "additionalProperties": false,
+      "properties": {
+       "name": {
+        "type": "string"
+       },
+       "device": {
+        "type": "string"
+       },
+       "grep": {
+        "type": "string"
+       },
+       "use": {
+        "type": "object",
+        "description": "Playwright `use` overrides on top of the device (e.g. viewport, deviceScaleFactor)"
+       }
+      }
+     }
+    }
+   }
+  },
+  "router": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "adapter": {
+     "enum": [
+      "express",
+      "react-router",
+      "json"
+     ]
+    },
+    "files": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "guards": {
+     "type": "object",
+     "description": "guard name -> roles it allows (react-router adapter)"
+    },
+    "routes": {
+     "type": "array",
+     "description": "json adapter: [{ path, allow: [roles] | 'all' | 'session' }]"
+    },
+    "deny": {
+     "type": "object",
+     "description": "what a refused cell looks like: { guest: 'status:401', session: 'status:403' } or redirect:<path>"
+    }
+   }
+  },
+  "backend": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "adapter": {
+     "enum": [
+      "none",
+      "node-test",
+      "supabase"
+     ]
+    },
+    "tests": {
+     "type": "string"
+    },
+    "sql": {
+     "type": "string"
+    },
+    "edge": {
+     "type": "string"
+    },
+    "functionsUrl": {
+     "type": "string"
+    },
+    "migrationsCmd": {
+     "type": "string"
+    },
+    "scaffoldMarker": {
+     "type": "string"
+    }
+   }
+  },
+  "mobile": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "enabled": {
+     "type": "boolean"
+    },
+    "appId": {
+     "type": "string"
+    },
+    "avd": {
+     "type": "string"
+    },
+    "apiLevel": {
+     "type": "integer",
+     "minimum": 21
+    },
+    "target": {
+     "type": "string"
+    },
+    "profile": {
+     "type": "string"
+    },
+    "apk": {
+     "type": "string"
+    },
+    "build": {
+     "type": "string"
+    },
+    "reversePorts": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     }
+    },
+    "maestro": {
+     "type": "object",
+     "additionalProperties": false,
+     "properties": {
+      "flows": {
+       "type": "string"
+      },
+      "version": {
+       "type": "string"
+      },
+      "sha256": {
+       "type": "string"
+      },
+      "out": {
+       "type": "string"
+      },
+      "runs": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "includeTags": {
+       "type": "string"
+      },
+      "forwardEnv": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   }
+  },
+  "gates": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "profiles": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "core",
+       "mobile",
+       "store"
+      ]
+     }
+    }
+   }
+  },
+  "fleet": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "node": {
+     "type": "string",
+     "pattern": "^\\d+$"
+    },
+    "results": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "explore": {
+     "type": "boolean"
+    },
+    "secrets": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "setup": {
+     "type": "object",
+     "description": "kind (static|stack|mobile) -> setup shell command run by unit.sh"
+    }
+   }
+  },
+  "flow": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "extra": {
+     "type": "array",
+     "description": "Project steps added to the generic flow (same shape as qa-pack/pack.json steps)"
+    },
+    "skip": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   }
+  }
+ }
+}

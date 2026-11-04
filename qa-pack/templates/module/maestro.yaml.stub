@@ -1,0 +1,8 @@
+# {{ID}} {{NAME}}: Maestro flow stub (mobile profile only)
+appId: ${APP_ID}
+tags:
+  - {{ID}}
+---
+- launchApp:
+    clearState: true
+# TODO(qa-pack): steps; assert with assertVisible / assertNotVisible, never with sleeps

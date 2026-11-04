@@ -1,0 +1,33 @@
+{
+ "id": "J02",
+ "name": "Access",
+ "area": "R2",
+ "status": "green",
+ "cases": [
+  "qa/browser-tests/access/J02-access.md"
+ ],
+ "requirements": [
+  "R2-001",
+  "R2-002",
+  "R2-003",
+  "R2-004"
+ ],
+ "designScreens": [
+  "notes-home"
+ ],
+ "compiled": [
+  "tests/compiled/auth.setup.mjs",
+  "tests/compiled/j02-access.spec.mjs"
+ ],
+ "fixtures": [],
+ "backend": {
+  "tests": [
+   "tests/api/notes.test.mjs"
+  ]
+ },
+ "mobile": {
+  "maestro": []
+ },
+ "dependsOn": [],
+ "notes": "Compiled and green locally on the mobile and desktop projects (npm run e2e). A real defect found while compiling: the login form overflowed at 390px (inputs without min-width:0), fixed in web/index.html; R3-002 now also asserts no horizontal overflow."
+}

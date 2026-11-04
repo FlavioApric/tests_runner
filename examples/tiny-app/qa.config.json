@@ -1,0 +1,57 @@
+{
+ "$schema": "../../qa-pack/schema/qa.config.schema.json",
+ "schema": "qa-pack/qa.config@1",
+ "project": "tiny-notes",
+ "app": {
+  "src": ["api", "web", "tools"],
+  "languages": ["js", "py"],
+  "exclude": ["tests/", "qa/"],
+  "docs": ["docs/SPEC.md"],
+  "precedence": "docs/SPEC.md wins over the code"
+ },
+ "stack": { "kind": "node" },
+ "preview": { "url": "http://127.0.0.1:4317", "start": "node api/server.mjs --port 4317", "timeoutMs": 20000, "reuse": false },
+ "ports": { "web": 4317 },
+ "env": { "prefix": "QA_", "personasFile": ".env.qa.personas.local", "personasExample": ".env.qa.personas.example", "secrets": [] },
+ "personas": [
+  { "key": "GUEST", "role": "guest", "session": false },
+  { "key": "MEMBER", "role": "member" },
+  { "key": "MEMBER_B", "role": "member", "note": "second member, for cross-user checks" },
+  { "key": "ADMIN", "role": "admin" }
+ ],
+ "ids": { "requirement": "R\\d+-\\d{3}", "module": "J\\d{2}", "modulePrefix": "J", "modulePad": 2 },
+ "areas": [
+  { "id": "R1", "slug": "notes", "title": "Notes", "docs": ["docs/SPEC.md#1"], "code": ["api/notes.mjs", "api/server.mjs", "web/index.html"] },
+  { "id": "R2", "slug": "access", "title": "Access and sessions", "docs": ["docs/SPEC.md#2"], "code": ["api/server.mjs"] },
+  { "id": "R3", "slug": "look", "title": "Look and design", "docs": ["docs/SPEC.md#3"], "code": ["web/index.html"] }
+ ],
+ "playwright": {
+  "config": "playwright.config.mjs",
+  "shards": 2,
+  "workers": 1,
+  "browsers": "chromium",
+  "projects": [
+   { "name": "mobile", "device": "Pixel 7", "use": { "viewport": { "width": 390, "height": 844 }, "deviceScaleFactor": 2 } },
+   { "name": "desktop", "device": "Desktop Chrome", "grep": "@desktop|@all" }
+  ]
+ },
+ "router": {
+  "adapter": "express",
+  "files": ["api/server.mjs"],
+  "deny": { "guest": "status:401", "session": "status:403" }
+ },
+ "backend": { "adapter": "node-test", "tests": "tests/api" },
+ "mobile": { "enabled": false },
+ "gates": { "profiles": ["core"] },
+ "fleet": {
+  "node": "22",
+  "results": ["qa-fleet-results", "test-results", "qa/evidence"],
+  "explore": true,
+  "setup": { "static": "cd ../.. && npm ci --no-audit --no-fund", "stack": "cd ../.. && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium" }
+ },
+ "flow": {
+  "extra": [
+   { "id": "f2-unit", "phase": "F2", "name": "Unit tests of the domain logic", "requires": ["node"], "cmd": ["node", "--test", "tests/api/*.test.mjs"], "fleet": { "kind": "static" } }
+  ]
+ }
+}

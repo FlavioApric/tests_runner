@@ -1,0 +1,13 @@
+node_modules/
+test-results/
+blob-report/
+playwright-report/
+.qa-pack/
+graphify-out/
+**/qa/evidence/html-report/
+**/qa/evidence/results.json
+**/qa/evidence/junit.xml
+**/qa/evidence/cases/
+**/qa/evidence/maestro/
+*.local
+.env.*.local

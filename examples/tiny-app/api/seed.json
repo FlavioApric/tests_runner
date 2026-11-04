@@ -1,0 +1,8 @@
+{
+ "//": "PUBLIC demo users of the example app. Never reuse these values anywhere real.",
+ "users": [
+  { "user": "member", "role": "member", "password": "demo-only-member" },
+  { "user": "member-b", "role": "member", "password": "demo-only-member-b" },
+  { "user": "admin", "role": "admin", "password": "demo-only-admin" }
+ ]
+}

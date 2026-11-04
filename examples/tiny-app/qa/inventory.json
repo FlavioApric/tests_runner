@@ -1,0 +1,462 @@
+{
+ "schema": "qa-pack/inventory@1",
+ "project": "tiny-notes",
+ "sources": [
+  "api",
+  "web",
+  "tools"
+ ],
+ "files": 4,
+ "testFiles": 5,
+ "totals": {
+  "functions": 18,
+  "exported": 8,
+  "withoutCallers": 0,
+  "withoutTests": 11,
+  "byLanguage": {
+   "js": 14,
+   "py": 4
+  },
+  "byKind": {
+   "function": 14,
+   "method": 4
+  }
+ },
+ "functions": [
+  {
+   "name": "validateTitle",
+   "file": "api/notes.mjs",
+   "line": 6,
+   "kind": "function",
+   "exported": true,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/notes.mjs",
+     "line": 17,
+     "kind": "call"
+    }
+   ],
+   "testedBy": [
+    "tests/api/notes.test.mjs"
+   ]
+  },
+  {
+   "name": "createStore",
+   "file": "api/notes.mjs",
+   "line": 12,
+   "kind": "function",
+   "exported": true,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 13,
+     "kind": "call"
+    }
+   ],
+   "testedBy": [
+    "tests/api/notes.test.mjs"
+   ]
+  },
+  {
+   "name": "add",
+   "file": "api/notes.mjs",
+   "line": 16,
+   "kind": "method",
+   "exported": false,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 46,
+     "kind": "call"
+    }
+   ],
+   "testedBy": [
+    "tests/api/notes.test.mjs",
+    "tests/compiled/j01-notes-basics.spec.mjs"
+   ]
+  },
+  {
+   "name": "list",
+   "file": "api/notes.mjs",
+   "line": 23,
+   "kind": "method",
+   "exported": false,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 43,
+     "kind": "call"
+    }
+   ],
+   "testedBy": [
+    "tests/api/notes.test.mjs"
+   ]
+  },
+  {
+   "name": "remove",
+   "file": "api/notes.mjs",
+   "line": 26,
+   "kind": "method",
+   "exported": false,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 49,
+     "kind": "call"
+    }
+   ],
+   "testedBy": [
+    "tests/api/notes.test.mjs"
+   ]
+  },
+  {
+   "name": "stats",
+   "file": "api/notes.mjs",
+   "line": 32,
+   "kind": "method",
+   "exported": false,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 50,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "countLabel",
+   "file": "api/notes.mjs",
+   "line": 36,
+   "kind": "function",
+   "exported": true,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 43,
+     "kind": "call"
+    }
+   ],
+   "testedBy": [
+    "tests/api/notes.test.mjs"
+   ]
+  },
+  {
+   "name": "send",
+   "file": "api/server.mjs",
+   "line": 17,
+   "kind": "function",
+   "exported": false,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 33,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 37,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 40,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 42,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 43,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 47,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 49,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 50,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 67,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 68,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 71,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "readBody",
+   "file": "api/server.mjs",
+   "line": 21,
+   "kind": "function",
+   "exported": false,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 35,
+     "kind": "call"
+    },
+    {
+     "file": "api/server.mjs",
+     "line": 45,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "sessionOf",
+   "file": "api/server.mjs",
+   "line": 26,
+   "kind": "function",
+   "exported": true,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 66,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "allowed",
+   "file": "api/server.mjs",
+   "line": 53,
+   "kind": "function",
+   "exported": true,
+   "language": "js",
+   "callers": [
+    {
+     "file": "api/server.mjs",
+     "line": 66,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "load_notes",
+   "file": "tools/report.py",
+   "line": 6,
+   "kind": "function",
+   "exported": true,
+   "language": "py",
+   "callers": [
+    {
+     "file": "tools/report.py",
+     "line": 23,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "count_by_owner",
+   "file": "tools/report.py",
+   "line": 11,
+   "kind": "function",
+   "exported": true,
+   "language": "py",
+   "callers": [
+    {
+     "file": "tools/report.py",
+     "line": 23,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "_sorted",
+   "file": "tools/report.py",
+   "line": 18,
+   "kind": "function",
+   "exported": false,
+   "language": "py",
+   "callers": [
+    {
+     "file": "tools/report.py",
+     "line": 15,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "main",
+   "file": "tools/report.py",
+   "line": 22,
+   "kind": "function",
+   "exported": true,
+   "language": "py",
+   "callers": [
+    {
+     "file": "tools/report.py",
+     "line": 27,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "$",
+   "file": "web/index.html",
+   "line": 49,
+   "kind": "function",
+   "exported": false,
+   "language": "js",
+   "callers": [
+    {
+     "file": "web/index.html",
+     "line": 53,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 56,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 57,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 58,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 59,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 67,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 71,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 74,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 77,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  },
+  {
+   "name": "api",
+   "file": "web/index.html",
+   "line": 50,
+   "kind": "function",
+   "exported": false,
+   "language": "js",
+   "callers": [
+    {
+     "file": "web/index.html",
+     "line": 52,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 55,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 63,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 70,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 76,
+     "kind": "call"
+    }
+   ],
+   "testedBy": [
+    "tests/compiled/j01-notes-basics.spec.mjs",
+    "tests/compiled/j02-access.spec.mjs",
+    "tests/compiled/support.mjs"
+   ]
+  },
+  {
+   "name": "refresh",
+   "file": "web/index.html",
+   "line": 51,
+   "kind": "function",
+   "exported": false,
+   "language": "js",
+   "callers": [
+    {
+     "file": "web/index.html",
+     "line": 63,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 72,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 78,
+     "kind": "call"
+    },
+    {
+     "file": "web/index.html",
+     "line": 80,
+     "kind": "call"
+    }
+   ],
+   "testedBy": []
+  }
+ ]
+}

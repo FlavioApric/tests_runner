@@ -1,0 +1,43 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "qa-fleet/units@1",
+ "title": "qa-fleet units.json",
+ "$comment": "Vendored from the tests_runner main branch (schema/units.schema.json); the needs pattern is escaped here so the file is valid JSON. Keep in sync.",
+ "type": "object",
+ "required": ["schema", "units"],
+ "properties": {
+  "schema": { "const": "qa-fleet/units@1" },
+  "project": { "type": "string" },
+  "defaults": { "$ref": "#/$defs/fields" },
+  "units": { "type": "array", "minItems": 1, "items": { "allOf": [{ "$ref": "#/$defs/fields" }, { "required": ["id"] }] } }
+ },
+ "$defs": {
+  "fields": {
+   "type": "object",
+   "properties": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+    "step": { "type": "string", "description": "Optional id of the project's own pipeline step this unit covers" },
+    "cmd": { "type": "string", "description": "Bash command run from the repo root (after unit.sh setup)" },
+    "estMinutes": { "type": "number", "minimum": 0.1 },
+    "timeoutMinutes": { "type": "integer", "minimum": 1, "maximum": 360 },
+    "results": { "type": "array", "items": { "type": "string" }, "description": "Paths (relative to the repo root) copied into the sealed results" },
+    "needs": { "type": "array", "items": { "type": "string", "pattern": "^(docker|kvm|free-disk|android-emulator(:\\d+)?|browsers(:[a-z,]+)?|node:\\d+|pnpm:\\d+|python:[\\d.]+|java:\\d+|go:[\\d.]+|services:(postgres|redis|mysql)(,(postgres|redis|mysql))*)$" } },
+    "secrets": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" }, "description": "Names of runner repo secrets exposed to this unit only" },
+    "env": { "type": "object", "additionalProperties": { "type": "string" } },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "runsOn": { "type": "string", "description": "Default ubuntu-latest" },
+    "agent": {
+     "type": "object",
+     "required": ["charter"],
+     "properties": {
+      "charter": { "type": "string", "description": "Markdown file in the repo: what the Claude agent must explore" },
+      "mcp": { "type": "array", "items": { "enum": ["mobile", "playwright"] } },
+      "maxTurns": { "type": "integer" },
+      "model": { "type": "string" },
+      "allowedTools": { "type": "array", "items": { "type": "string" } }
+     }
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,310 @@
+{
+ "schema": "qa-pack/requirements@1",
+ "project": "tiny-notes",
+ "sources": [
+  {
+   "area": "R1",
+   "file": "qa/research/R1-notes.md",
+   "count": 5
+  },
+  {
+   "area": "R2",
+   "file": "qa/research/R2-access.md",
+   "count": 4
+  },
+  {
+   "area": "R3",
+   "file": "qa/research/R3-look.md",
+   "count": 3
+  }
+ ],
+ "totals": {
+  "requirements": 12,
+  "byVerdict": {
+   "IMPLEMENTED": 12
+  },
+  "byPriority": {
+   "P0": 6,
+   "P1": 2,
+   "P2": 4
+  },
+  "byLayer": {
+   "api": 4,
+   "browser": 10,
+   "unit": 6
+  },
+  "byArea": {
+   "R1": 5,
+   "R2": 4,
+   "R3": 3
+  }
+ },
+ "journeys": {
+  "J01": {
+   "name": "notes basics",
+   "key": "notes-basics",
+   "requirements": [
+    "R1-001",
+    "R1-002",
+    "R1-003",
+    "R1-004",
+    "R1-005",
+    "R3-001",
+    "R3-002",
+    "R3-003"
+   ]
+  },
+  "J02": {
+   "name": "access",
+   "key": "access",
+   "requirements": [
+    "R2-001",
+    "R2-002",
+    "R2-003",
+    "R2-004"
+   ]
+  }
+ },
+ "requirements": [
+  {
+   "id": "R1-001",
+   "area": "R1",
+   "requirement": "A signed-in user adds a note with a 1-80 character title; it appears at the top of the list",
+   "source": "SPEC.md §1.1",
+   "code": "api/notes.mjs:createStore.add, web/index.html",
+   "verdict": "IMPLEMENTED",
+   "coverage": "tests/api/notes.test.mjs (unit)",
+   "layers": [
+    "browser",
+    "unit"
+   ],
+   "scenarios": [
+    "success",
+    "persistence"
+   ],
+   "journeys": [
+    "J01"
+   ],
+   "priority": "P0"
+  },
+  {
+   "id": "R1-002",
+   "area": "R1",
+   "requirement": "An empty title or one longer than 80 characters is rejected with \"Title must be 1-80 characters\" and nothing is added",
+   "source": "SPEC.md §1.2",
+   "code": "api/notes.mjs:validateTitle",
+   "verdict": "IMPLEMENTED",
+   "coverage": "tests/api/notes.test.mjs (unit)",
+   "layers": [
+    "browser",
+    "unit"
+   ],
+   "scenarios": [
+    "invalid",
+    "boundary"
+   ],
+   "journeys": [
+    "J01"
+   ],
+   "priority": "P1"
+  },
+  {
+   "id": "R1-003",
+   "area": "R1",
+   "requirement": "The count label reads \"1 note\" for one note and \"N notes\" otherwise",
+   "source": "SPEC.md §1.3",
+   "code": "api/notes.mjs:countLabel",
+   "verdict": "IMPLEMENTED",
+   "coverage": "tests/api/notes.test.mjs (unit)",
+   "layers": [
+    "browser",
+    "unit"
+   ],
+   "scenarios": [
+    "success",
+    "boundary"
+   ],
+   "journeys": [
+    "J01"
+   ],
+   "priority": "P2"
+  },
+  {
+   "id": "R1-004",
+   "area": "R1",
+   "requirement": "A user deletes their own note; it leaves the list and the count drops by one",
+   "source": "SPEC.md §1.4",
+   "code": "api/notes.mjs:createStore.remove",
+   "verdict": "IMPLEMENTED",
+   "coverage": "tests/api/notes.test.mjs (unit)",
+   "layers": [
+    "browser",
+    "unit"
+   ],
+   "scenarios": [
+    "success",
+    "idempotent"
+   ],
+   "journeys": [
+    "J01"
+   ],
+   "priority": "P1"
+  },
+  {
+   "id": "R1-005",
+   "area": "R1",
+   "requirement": "A user sees only their own notes",
+   "source": "SPEC.md §1.5",
+   "code": "api/notes.mjs:createStore.list",
+   "verdict": "IMPLEMENTED",
+   "coverage": "tests/api/notes.test.mjs (unit)",
+   "layers": [
+    "browser",
+    "unit"
+   ],
+   "scenarios": [
+    "wrong-role"
+   ],
+   "journeys": [
+    "J01"
+   ],
+   "priority": "P0"
+  },
+  {
+   "id": "R2-001",
+   "area": "R2",
+   "requirement": "A guest calling a session API gets 401 \"Sign in required\" and the page shows the sign-in form",
+   "source": "SPEC.md §2.1",
+   "code": "api/server.mjs:allowed",
+   "verdict": "IMPLEMENTED",
+   "coverage": "none",
+   "layers": [
+    "browser",
+    "api"
+   ],
+   "scenarios": [
+    "wrong-role"
+   ],
+   "journeys": [
+    "J02"
+   ],
+   "priority": "P0"
+  },
+  {
+   "id": "R2-002",
+   "area": "R2",
+   "requirement": "Wrong credentials get 401 \"Invalid credentials\" and the user stays signed out",
+   "source": "SPEC.md §2.2",
+   "code": "api/server.mjs POST /api/login",
+   "verdict": "IMPLEMENTED",
+   "coverage": "none",
+   "layers": [
+    "browser",
+    "api"
+   ],
+   "scenarios": [
+    "invalid"
+   ],
+   "journeys": [
+    "J02"
+   ],
+   "priority": "P0"
+  },
+  {
+   "id": "R2-003",
+   "area": "R2",
+   "requirement": "Deleting another user's note answers 404 and the note survives",
+   "source": "SPEC.md §2.3",
+   "code": "api/notes.mjs:createStore.remove",
+   "verdict": "IMPLEMENTED",
+   "coverage": "tests/api/notes.test.mjs (unit)",
+   "layers": [
+    "api",
+    "unit"
+   ],
+   "scenarios": [
+    "wrong-role"
+   ],
+   "journeys": [
+    "J02"
+   ],
+   "priority": "P0"
+  },
+  {
+   "id": "R2-004",
+   "area": "R2",
+   "requirement": "Admin stats: admin 200, member 403 \"Forbidden\", guest 401",
+   "source": "SPEC.md §2.4",
+   "code": "api/server.mjs GET /api/admin/stats",
+   "verdict": "IMPLEMENTED",
+   "coverage": "none",
+   "layers": [
+    "api"
+   ],
+   "scenarios": [
+    "wrong-role"
+   ],
+   "journeys": [
+    "J02"
+   ],
+   "priority": "P0"
+  },
+  {
+   "id": "R3-001",
+   "area": "R3",
+   "requirement": "The header shows \"Tiny Notes\" in bold 24px white on the brand blue",
+   "source": "SPEC.md §3.1",
+   "code": "web/index.html header",
+   "verdict": "IMPLEMENTED",
+   "coverage": "none",
+   "layers": [
+    "browser"
+   ],
+   "scenarios": [
+    "success"
+   ],
+   "journeys": [
+    "J01"
+   ],
+   "priority": "P2"
+  },
+  {
+   "id": "R3-002",
+   "area": "R3",
+   "requirement": "Every button is at least 44x44 CSS px",
+   "source": "SPEC.md §3.2",
+   "code": "web/index.html button css",
+   "verdict": "IMPLEMENTED",
+   "coverage": "none",
+   "layers": [
+    "browser"
+   ],
+   "scenarios": [
+    "boundary"
+   ],
+   "journeys": [
+    "J01"
+   ],
+   "priority": "P2"
+  },
+  {
+   "id": "R3-003",
+   "area": "R3",
+   "requirement": "Text contrast is at least 4.5:1",
+   "source": "SPEC.md §3.3",
+   "code": "web/index.html :root vars",
+   "verdict": "IMPLEMENTED",
+   "coverage": "none",
+   "layers": [
+    "browser"
+   ],
+   "scenarios": [
+    "success"
+   ],
+   "journeys": [
+    "J01"
+   ],
+   "priority": "P2"
+  }
+ ]
+}
