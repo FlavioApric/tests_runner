@@ -1,0 +1,200 @@
+# qa-fleet runner: runs a batch of test units of a PRIVATE source repo and uploads ENCRYPTED results.
+# Generic: knows nothing about any app. The unit commands are read from <source>/.qa-fleet/units.json at <ref>,
+# never from the dispatch inputs. Only workflow_dispatch: nobody can trigger it from a PR or a fork.
+name: qa-fleet shard
+run-name: fleet ${{ inputs.run_id }} ${{ inputs.batch }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id: { description: 'Fleet run id', required: true, type: string }
+      batch: { description: 'Batch name (b-<runner> or retry-<runner>)', required: true, type: string }
+      source: { description: 'Private source repo owner/name (must be in vars.ALLOWED_SOURCES)', required: true, type: string }
+      ref: { description: 'Branch, tag or SHA of the source to test', required: true, type: string }
+      units: { description: 'Comma separated unit ids', required: true, type: string }
+      max_parallel: { description: 'Max parallel jobs of this batch', required: false, type: string, default: '20' }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-${{ inputs.run_id }}-${{ inputs.batch }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    env:
+      IN_RUN: ${{ inputs.run_id }}
+      IN_BATCH: ${{ inputs.batch }}
+      IN_SOURCE: ${{ inputs.source }}
+      IN_REF: ${{ inputs.ref }}
+      IN_UNITS: ${{ inputs.units }}
+      IN_MAXP: ${{ inputs.max_parallel }}
+      ALLOWED: ${{ vars.ALLOWED_SOURCES }}
+      RECIPIENT: ${{ vars.FLEET_RECIPIENT }}
+    steps:
+      - name: Validate inputs
+        run: |
+          set -eu
+          ok() { printf '%s' "$1" | grep -Eq "$2"; }
+          ok "$IN_RUN" '^[A-Za-z0-9._-]{1,64}$' || { echo "::error::bad run_id"; exit 1; }
+          ok "$IN_BATCH" '^[A-Za-z0-9._-]{1,64}$' || { echo "::error::bad batch"; exit 1; }
+          ok "$IN_SOURCE" '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "::error::bad source"; exit 1; }
+          ok "$IN_REF" '^[A-Za-z0-9._/-]{1,200}$' || { echo "::error::bad ref"; exit 1; }
+          case "$IN_REF" in *..*|-*) echo "::error::bad ref"; exit 1;; esac
+          ok "$IN_UNITS" '^[A-Za-z0-9._,-]{1,4000}$' || { echo "::error::bad units"; exit 1; }
+          ok "$IN_MAXP" '^[0-9]{1,3}$' || { echo "::error::bad max_parallel"; exit 1; }
+          printf '%s' ",${ALLOWED// /}," | grep -qiF ",$IN_SOURCE," || { echo "::error::source is not in vars.ALLOWED_SOURCES"; exit 1; }
+          case "$RECIPIENT" in qafpub1:*) ;; *) echo "::error::vars.FLEET_RECIPIENT is not set (run: fleet keygen)"; exit 1;; esac
+
+      - name: Checkout fleet
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { path: fleet, persist-credentials: false }
+
+      - name: Checkout units.json of the source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.source }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          path: src
+          persist-credentials: false
+          sparse-checkout: .qa-fleet
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22 }
+
+      - name: Build matrix
+        id: m
+        run: |
+          set -eu
+          M=$(node fleet/cli/fleet.mjs matrix --project src --units "$IN_UNITS")
+          echo "matrix=$M" >>"$GITHUB_OUTPUT"
+          echo "$(printf '%s' "$M" | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0,"utf8")).length))') unit(s)"
+
+  unit:
+    name: u:${{ matrix.unit.id }}
+    needs: validate
+    runs-on: ${{ matrix.unit.runsOn }}
+    timeout-minutes: ${{ matrix.unit.timeout }}
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
+      matrix:
+        unit: ${{ fromJSON(needs.validate.outputs.matrix) }}
+    env:
+      IN_RUN: ${{ inputs.run_id }}
+      UNIT_ID: ${{ matrix.unit.id }}
+      QAF_BROWSERS: ${{ matrix.unit.browsers }}
+      QAF_SERVICES: ${{ matrix.unit.services }}
+      RECIPIENT: ${{ vars.FLEET_RECIPIENT }}
+    steps:
+      - name: Free disk space
+        if: matrix.unit.freeDisk
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift /opt/microsoft /usr/local/.ghcup
+          sudo apt-get clean
+          df -h / | tail -1
+
+      - name: Enable KVM
+        if: matrix.unit.kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Checkout fleet
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { path: fleet, persist-credentials: false }
+
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.source }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          path: src
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: "${{ matrix.unit.node || '22' }}" }
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        if: matrix.unit.pnpm != ''
+        with: { version: "${{ matrix.unit.pnpm }}" }
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: matrix.unit.python != ''
+        with: { python-version: "${{ matrix.unit.python }}" }
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        if: matrix.unit.java != ''
+        with: { distribution: temurin, java-version: "${{ matrix.unit.java }}" }
+
+      - name: Start services
+        if: matrix.unit.services != ''
+        run: |
+          set -eu
+          for s in ${QAF_SERVICES//,/ }; do
+            case "$s" in
+              postgres) docker run -d --name qaf-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine >/dev/null ;;
+              redis) docker run -d --name qaf-redis -p 6379:6379 redis:7-alpine >/dev/null ;;
+              mysql) docker run -d --name qaf-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=mysql mysql:8 >/dev/null ;;
+            esac
+            echo "service $s started"
+          done
+
+      - name: Expose only the secrets this unit declared
+        env:
+          ALL_SECRETS: ${{ toJSON(secrets) }}
+          NAMES: ${{ matrix.unit.secrets }}
+        run: node fleet/cli/fleet.mjs secrets-env --names "$NAMES" --out "$RUNNER_TEMP/qaf-unit.env"
+
+      - name: Run unit (output goes to the sealed log, not here)
+        id: run
+        run: |
+          set +e
+          bash fleet/runner/run-unit.sh "$UNIT_ID"
+          echo "code=$?" >>"$GITHUB_OUTPUT"
+
+      - name: Seal results
+        if: always()
+        run: |
+          set -eu
+          mkdir -p qaf-out/qa-fleet-meta
+          [ -f qaf-out/qa-fleet-meta/result.json ] || printf '{"unit":"%s","phase":"lost","exitCode":75}\n' "$UNIT_ID" >qaf-out/qa-fleet-meta/result.json
+          tar czf "$RUNNER_TEMP/res.tgz" -C qaf-out .
+          node fleet/cli/fleet.mjs seal --in "$RUNNER_TEMP/res.tgz" --out "$RUNNER_TEMP/res.qaf" --recipient "$RECIPIENT"
+          rm -f "$RUNNER_TEMP/res.tgz"
+          rm -rf qaf-out src/qa-fleet-results
+
+      - name: Upload sealed results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: res-${{ inputs.run_id }}-${{ matrix.unit.id }}
+          path: ${{ runner.temp }}/res.qaf
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
+
+      # public signal for the coordinator (it has no key to read the sealed result): exit 75 = infrastructure
+      - name: Infra failure
+        if: always() && (steps.run.outputs.code == '75' || steps.run.outputs.code == '')
+        run: |
+          echo "::warning::infrastructure failure (exit 75 or the unit never ran): the fleet retries it once on another runner"
+          exit 1
+
+      - name: Result
+        if: always()
+        env:
+          CODE: ${{ steps.run.outputs.code }}
+        run: |
+          { echo "| unit | exit |"; echo "|---|---|"; echo "| $UNIT_ID | ${CODE:-lost} |"; } >>"$GITHUB_STEP_SUMMARY"
+          exit "${CODE:-75}"

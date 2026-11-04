@@ -1,0 +1,10 @@
+{
+ "schema": "qa-fleet/units@1",
+ "project": "py-js example",
+ "defaults": { "results": ["qa-fleet-results"] },
+ "units": [
+  { "id": "pytest-1-of-2", "needs": ["python:3.12"], "estMinutes": 1, "cmd": "python -m pip install -q pytest && python -m pytest tests/test_a.py --junitxml=qa-fleet-results/junit.xml" },
+  { "id": "pytest-2-of-2", "needs": ["python:3.12"], "estMinutes": 1, "cmd": "python -m pip install -q pytest && python -m pytest tests/test_b.py --junitxml=qa-fleet-results/junit.xml" },
+  { "id": "js-node-test", "needs": ["node:22"], "estMinutes": 1, "cmd": "node --test --test-reporter=junit --test-reporter-destination=qa-fleet-results/junit.xml \"js/*.test.mjs\"" }
+ ]
+}

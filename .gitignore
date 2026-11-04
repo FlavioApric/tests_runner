@@ -1,0 +1,8 @@
+node_modules/
+runs/
+*.key
+fleet.json
+qaf-out/
+qa-fleet-results/
+/QA-FLEET-CARD.md
+*.card.md
