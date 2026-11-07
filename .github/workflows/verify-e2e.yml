@@ -98,6 +98,11 @@ jobs:
           E2E_SKIP_SCREENSHOTS: '1'
           SUITE_CMD: ${{ matrix.cmd }}
         run: bash -c "$SUITE_CMD"
+      - name: Edge function step timings (always; lines like '<function> <step> <n>ms')
+        if: always()
+        run: |
+          c=$(docker ps --format '{{.Names}}' | grep -m1 edge_runtime || true)
+          if [ -n "$c" ]; then docker logs "$c" 2>&1 | grep -E '^[a-z-]+ [a-z_ ]+ [0-9]+ms$' | tail -60 || true; fi
       - name: Failure context (page snapshot of each failed test, edge function log)
         if: failure()
         run: |
