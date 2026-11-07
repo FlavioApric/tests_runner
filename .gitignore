@@ -1,8 +1,6 @@
 node_modules/
 runs/
 *.key
-fleet.json
+.qa-fleet-local/
 qaf-out/
 qa-fleet-results/
-/QA-FLEET-CARD.md
-*.card.md

@@ -1,0 +1,38 @@
+# tests_runner runner stub. Written and kept up to date by the fleet coordinator of __HOME__: do not edit by hand.
+# All the logic lives in the reusable workflow below; this repo only lends its free Actions minutes and parallel jobs.
+# Only workflow_dispatch: no push, PR or fork can start it. The unit commands come from the source repo, not from inputs.
+name: tests_runner shard
+run-name: fleet ${{ inputs.run_id }} ${{ inputs.batch }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id: { description: 'Fleet run id', required: true, type: string }
+      batch: { description: 'Batch name', required: true, type: string }
+      source: { description: 'Private source repo owner/name', required: true, type: string }
+      ref: { description: 'Branch, tag or SHA of the source', required: true, type: string }
+      units: { description: 'Comma separated unit ids', required: true, type: string }
+      max_parallel: { description: 'Max parallel jobs', required: false, type: string, default: '20' }
+      recipient: { description: 'PUBLIC key the results are sealed to (qafpub1:...)', required: true, type: string }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-${{ inputs.run_id }}-${{ inputs.batch }}
+  cancel-in-progress: false
+
+jobs:
+  shard:
+    uses: __HOME__/.github/workflows/shard-core.yml@__SHA__
+    with:
+      run_id: ${{ inputs.run_id }}
+      batch: ${{ inputs.batch }}
+      source: ${{ inputs.source }}
+      ref: ${{ inputs.ref }}
+      units: ${{ inputs.units }}
+      max_parallel: ${{ inputs.max_parallel }}
+      recipient: ${{ inputs.recipient }}
+      fleet_repo: __HOME__
+      fleet_sha: __SHA__
+    secrets: inherit

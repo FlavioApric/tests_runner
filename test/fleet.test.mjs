@@ -1,35 +1,38 @@
-// End-to-end coordination against a fake GitHub API: status -> plan -> dispatch -> watch -> collect -> infra retry.
+// End-to-end against a fake GitHub that also plays the App: discovery -> provision -> per-run secrets -> dispatch ->
+// watch -> collect -> infra retry -> sealed bundle -> pull on the PC.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
 import { generateKeys, sealFile } from '../lib/crypto.mjs'
-import { loadConfig } from '../lib/config.mjs'
 import * as fleet from '../lib/fleet.mjs'
-import { coordinate, pull, sealCard, openSealedCard, BUNDLE } from '../lib/coordinator.mjs'
-import { CARD_SCHEMA, cardToConfig } from '../lib/card.mjs'
+import { coordinate } from '../lib/coordinator.mjs'
+import { appJwt, githubApp, discoverRunners } from '../lib/app.mjs'
+import { provision, stubYaml, STUB_PATH } from '../lib/provision.mjs'
+import * as local from '../lib/local.mjs'
 import { makeZip } from './helpers.mjs'
 
 const TAR = process.platform === 'win32' && fs.existsSync('C:\\Windows\\System32\\tar.exe') ? 'C:\\Windows\\System32\\tar.exe' : 'tar'
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'qaf-e2e-'))
+const SHA = 'a'.repeat(40)
+const HOME = 'me/tests_runner'
+const UNITS = { schema: 'qa-fleet/units@1', units: [
+  { id: 'ok-1', cmd: 'true', estMinutes: 3, secrets: ['STRIPE_TEST_KEY'] }, { id: 'ok-2', cmd: 'true', estMinutes: 3 }, { id: 'red', cmd: 'false', estMinutes: 2 }, { id: 'flaky-infra', cmd: 'true', estMinutes: 1 },
+  { id: 'explore-x', agent: { charter: 'c.md' } },
+] }
+const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
+const PEM = privateKey.export({ type: 'pkcs1', format: 'pem' })
 
-function setup() {
-  const home = tmp(), project = tmp()
-  const keys = generateKeys()
-  fs.writeFileSync(path.join(home, 'identity.key'), keys.identity)
-  fs.writeFileSync(path.join(home, 'fleet.json'), JSON.stringify({ runners: [1, 2].map((i) => ({ name: `org${i}`, repo: `org${i}/qa-fleet-runner`, token: `tok${i}`, maxParallel: 2 })), sources: { app: { repo: 'me/app' } } }))
-  fs.mkdirSync(path.join(project, '.qa-fleet'))
-  fs.writeFileSync(path.join(project, '.qa-fleet', 'units.json'), JSON.stringify({ schema: 'qa-fleet/units@1', units: [
-    { id: 'ok-1', cmd: 'true', estMinutes: 3 }, { id: 'ok-2', cmd: 'true', estMinutes: 3 }, { id: 'red', cmd: 'false', estMinutes: 2 }, { id: 'flaky-infra', cmd: 'true', estMinutes: 1 },
-    { id: 'explore-x', agent: { charter: 'c.md' } },
-  ] }))
-  return { home, project, keys, cfg: loadConfig(path.join(home, 'fleet.json')) }
+function project() {
+  const p = tmp()
+  fs.mkdirSync(path.join(p, '.qa-fleet'))
+  fs.writeFileSync(path.join(p, '.qa-fleet', 'units.json'), JSON.stringify(UNITS))
+  return p
 }
 
-// sealed artifact zip the way shard.yml builds it
 async function artifactZip(recipient, unit, exitCode, phase, junit) {
   const d = tmp(), stage = path.join(d, 'stage')
   fs.mkdirSync(path.join(stage, 'qa-fleet-meta'), { recursive: true }); fs.mkdirSync(path.join(stage, 'results'), { recursive: true })
@@ -42,22 +45,52 @@ async function artifactZip(recipient, unit, exitCode, phase, junit) {
   return makeZip([['res.qaf', fs.readFileSync(path.join(d, 'res.qaf'))]])
 }
 
-function fakeGitHub(recipient, extra = {}) {
-  const calls = { dispatch: [] }
-  const runs = new Map() // id -> {repo, units, batch}
-  const arts = new Map() // artifact id -> zip promise
+const J = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json' } })
+const verifyJwt = (auth) => {
+  const [h, b, s] = auth.replace(/^Bearer /, '').split('.')
+  assert.ok(crypto.verify('RSA-SHA256', Buffer.from(`${h}.${b}`), publicKey, Buffer.from(s, 'base64url')), 'App JWT signed with the App key')
+  const p = JSON.parse(Buffer.from(b, 'base64url'))
+  assert.equal(p.iss, '123'); assert.ok(p.exp - p.iat <= 600)
+}
+
+// installations: 1 = org1, 2 = org2, 3 = a stranger, 9 = the home owner (home repo + private source)
+const INSTALLS = [
+  { id: 9, account: { login: 'me' }, repos: [{ name: 'tests_runner', full_name: HOME }, { name: 'app', full_name: 'me/app', private: true }] },
+  { id: 1, account: { login: 'org1' }, repos: [{ name: 'tests_runner', full_name: 'org1/tests_runner' }] },
+  { id: 2, account: { login: 'org2' }, repos: [{ name: 'tests_runner_O', full_name: 'org2/tests_runner_O' }, { name: 'blog', full_name: 'org2/blog' }] },
+  { id: 3, account: { login: 'stranger' }, repos: [{ name: 'tests_runner', full_name: 'stranger/tests_runner' }] },
+]
+const tokenFor = (inst, narrow) => `tok-${inst}-${(narrow.repositories ?? ['all']).join('+')}${narrow.permissions ? '-' + Object.entries(narrow.permissions).map((x) => x.join(':')).join('') : ''}`
+
+function fakeGitHub(recipient) {
+  const calls = { dispatch: [], minted: [], files: {}, puts: 0, touched: new Set() }
+  const runs = new Map(), arts = new Map()
   let nextRun = 100, nextArt = 1
-  const J = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json' } })
+  const unitsJson = Buffer.from(JSON.stringify(UNITS))
   async function fetchImpl(url, init = {}) {
-    const u = new URL(url)
-    const m = /^\/repos\/([^/]+)\/([^/]+)(.*)$/.exec(u.pathname)
+    const u = new URL(url), p = u.pathname, auth = init.headers.Authorization ?? ''
+    if (p === '/app/installations') { verifyJwt(auth); return J(INSTALLS.map(({ repos, ...i }) => i)) }
+    let m = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(p)
+    if (m) { verifyJwt(auth); const narrow = JSON.parse(init.body ?? '{}'); const token = tokenFor(m[1], narrow); calls.minted.push({ inst: m[1], narrow, token }); return J({ token, expires_at: new Date(Date.now() + 3600e3).toISOString() }, 201) }
+    if (p === '/installation/repositories') { const inst = INSTALLS.find((i) => auth === `Bearer ${tokenFor(i.id, {})}`); assert.ok(inst, 'listing repos with an installation token'); return J({ repositories: inst.repos }) }
+    if (p === '/repos/me/app/installation') { verifyJwt(auth); return J({ id: 9 }) }
+    m = /^\/repos\/([^/]+\/[^/]+)(.*)$/.exec(p)
     assert.ok(m, url)
-    const repo = `${m[1]}/${m[2]}`, rest = m[3]
-    if (extra.route) { const x = await extra.route(repo, rest, u, init, J); if (x) return x }
-    assert.equal(init.headers.Authorization, `Bearer tok${repo[3]}`, 'each runner uses its own token')
+    const [, repo, rest] = m
+    calls.touched.add(repo)
+    if (repo === 'me/app') {
+      assert.equal(auth, `Bearer ${tokenFor(9, { repositories: ['app'], permissions: { contents: 'read' } })}`, 'the source is read with the narrowed read-only token')
+      if (rest === '/contents/.qa-fleet/units.json') return J({ content: unitsJson.toString('base64'), encoding: 'base64' })
+      return J({ message: 'Not Found' }, 404)
+    }
+    const inst = INSTALLS.find((i) => i.repos.some((r) => r.full_name === repo))
+    assert.equal(auth, `Bearer ${tokenFor(inst.id, { repositories: [repo.split('/')[1]] })}`, `${repo} is reached with a token narrowed to that repo`)
     if (rest === '') return J({ private: false })
-    if (rest === '/actions/secrets') return J({ secrets: [{ name: 'SOURCE_REPO_TOKEN' }] })
-    if (rest === '/actions/variables') return J({ variables: [{ name: 'FLEET_RECIPIENT' }, { name: 'ALLOWED_SOURCES' }] })
+    if (rest === `/contents/${STUB_PATH}`) {
+      if (init.method === 'PUT') { calls.puts++; const b = JSON.parse(init.body); calls.files[repo] = { sha: `s${calls.puts}`, text: Buffer.from(b.content, 'base64').toString('utf8') }; return J({}, 201) }
+      const f = calls.files[repo]; return f ? J({ sha: f.sha, content: Buffer.from(f.text).toString('base64') }) : J({ message: 'This repository is empty.' }, 404)
+    }
+    if (rest === '/actions/permissions') return new Response(null, { status: 204 })
     if (rest === '/actions/runs' && u.searchParams.get('status')) return J({ workflow_runs: [] })
     if (rest === '/actions/workflows/shard.yml/dispatches') {
       const body = JSON.parse(init.body)
@@ -66,17 +99,17 @@ function fakeGitHub(recipient, extra = {}) {
       runs.set(id, { repo, units: body.inputs.units.split(','), batch: body.inputs.batch, runId: body.inputs.run_id })
       return J({ workflow_run_id: id })
     }
-    let r = /^\/actions\/runs\/(\d+)(\/jobs|\/artifacts)?$/.exec(rest)
+    let r = /^\/actions\/runs\/(\d+)(\/jobs|\/artifacts|\/cancel)?$/.exec(rest)
     if (r) {
       const run = runs.get(Number(r[1]))
       if (!r[2]) return J({ id: Number(r[1]), status: 'completed' })
       const lost = (x) => x === 'flaky-infra' && run.batch.startsWith('b-')
-      if (r[2] === '/jobs') return J({ jobs: [{ name: 'validate', status: 'completed' }, ...run.units.map((x) => ({ name: `u:${x}`, status: 'completed', started_at: '2026-01-01T10:00:00Z', completed_at: '2026-01-01T10:04:00Z', conclusion: x === 'red' || lost(x) ? 'failure' : 'success', steps: x === 'red' ? [{ name: 'Result', conclusion: 'failure' }] : lost(x) ? [{ name: 'Infra failure', conclusion: 'failure' }, { name: 'Result', conclusion: 'failure' }] : [] }))] })
+      if (r[2] === '/jobs') return J({ jobs: [{ name: 'shard / validate', status: 'completed' }, ...run.units.map((x) => ({ name: `shard / u:${x}`, status: 'completed', started_at: '2026-01-01T10:00:00Z', completed_at: '2026-01-01T10:04:00Z', conclusion: x === 'red' || lost(x) ? 'failure' : 'success', steps: x === 'red' ? [{ name: 'Result', conclusion: 'failure' }] : lost(x) ? [{ name: 'Infra failure', conclusion: 'failure' }, { name: 'Result', conclusion: 'failure' }] : [] }))] })
       const list = []
       for (const x of run.units) {
-        if (x === 'flaky-infra' && run.batch.startsWith('b-')) continue // first attempt: runner lost, no artifact
+        if (lost(x)) continue
         const id = nextArt++
-        const junit = x === 'red' ? '<testsuite tests="2"><testcase name="a"/><testcase name="b"><failure/></testcase></testsuite>' : '<testsuite tests="1"><testcase name="a"/></testsuite>'
+        const junit = x === 'red' ? '<testsuite tests="2"><testcase name="a"/><testcase name="b"><failure/></testcase></testsuite>' : '<testsuite tests="1"><testcase name="a"/></testcase></testsuite>'.replace('</testcase></testsuite>', '</testsuite>')
         arts.set(id, artifactZip(recipient, x, x === 'red' ? 1 : 0, 'run', junit))
         list.push({ id, name: `res-${run.runId}-${x}`, expired: false })
       }
@@ -89,107 +122,137 @@ function fakeGitHub(recipient, extra = {}) {
   return { fetchImpl, calls }
 }
 
-test('full cycle: split over runners, decrypt, classify, retry infra once elsewhere, never retry test failures', async () => {
-  const { project, keys, cfg } = setup()
-  const gh = fakeGitHub(keys.recipient)
-  const r = await fleet.runAll({ cfg, projectDir: project, source: 'app', ref: 'qa/branch', fetchImpl: gh.fetchImpl, pollMs: 1, log: () => {} })
-  const first = gh.calls.dispatch.filter((d) => d.batch.startsWith('b-'))
-  assert.equal(first.length, 2, 'both runners got a batch')
-  assert.deepEqual(first.flatMap((d) => d.units.split(',')).sort(), ['flaky-infra', 'ok-1', 'ok-2', 'red'], 'agent units never go to a runner')
-  assert.ok(first.every((d) => d.source === 'me/app' && d.ref === 'qa/branch' && d.max_parallel === '2'))
-  const retry = gh.calls.dispatch.filter((d) => d.batch.startsWith('retry-'))
-  assert.equal(retry.length, 1)
-  assert.equal(retry[0].units, 'flaky-infra')
-  const firstRepo = first.find((d) => d.units.split(',').includes('flaky-infra')).repo
-  assert.notEqual(retry[0].repo, firstRepo, 'retried on another runner')
-  assert.equal(r.results['red'].status, 'fail')
-  assert.equal(r.results['red'].junit.failures, 1)
-  assert.equal(r.results['ok-1'].status, 'pass')
-  assert.equal(r.results['flaky-infra'].status, 'pass')
-  assert.ok(fs.readFileSync(path.join(r.results['ok-1'].dir, 'qa-fleet-meta', 'unit.log'), 'utf8').includes('private log'), 'decrypted locally')
-  assert.equal(r.summary.fail, 1); assert.equal(r.summary.pass, 3)
-  assert.ok(fs.existsSync(r.summaryPath))
-  const timings = JSON.parse(fs.readFileSync(path.join(project, '.qa-fleet', 'timings.json'), 'utf8'))
-  assert.equal(timings['ok-1'], 3)
-  for (const d of gh.calls.dispatch) assert.ok(!JSON.stringify(d).includes('true'), 'no command text is ever dispatched')
+// gh stand-in: records secret set/delete, never sees a secret in argv
+function fakeExec() {
+  const calls = []
+  const exec = (cmd, args, o = {}) => { calls.push({ cmd, args, input: o.input, token: o.env?.GH_TOKEN }); return { status: 0, stdout: '', stderr: '' } }
+  return { exec, calls }
+}
+
+test('App JWT: RS256, verifiable with the App public key, short lived', () => {
+  const t = appJwt(123, PEM, Date.parse('2026-01-01T00:00:00Z'))
+  verifyJwt(`Bearer ${t}`)
+  assert.throws(() => githubApp({ appId: '', pem: '' }), /setup-app/)
 })
 
-test('dry run plans without dispatching', async () => {
-  const { project, keys, cfg } = setup()
-  const gh = fakeGitHub(keys.recipient)
-  const r = await fleet.runAll({ cfg, projectDir: project, source: 'app', ref: 'main', dry: true, fetchImpl: gh.fetchImpl, log: () => {} })
-  assert.equal(r.dry, true)
+test('discovery: allowed accounts only, tests_runner* repos only, home repo first and marked self', async () => {
+  const gh = fakeGitHub(generateKeys().recipient), logs = []
+  const app = githubApp({ appId: 123, pem: PEM, fetchImpl: gh.fetchImpl })
+  const rs = await discoverRunners(app, { home: HOME, accounts: ['org1', 'org2'], log: (m) => logs.push(m) })
+  assert.deepEqual(rs.map((r) => r.repo), [HOME, 'org1/tests_runner', 'org2/tests_runner_O'])
+  assert.equal(rs[0].self, true); assert.equal(rs[0].maxParallel, 19, 'the home repo keeps a slot for the coordinator')
+  assert.ok(logs.some((l) => l.includes('stranger') && l.includes('FLEET_ACCOUNTS')), 'a stranger installing the public App never becomes a runner')
+})
+
+test('provision: pushes the pinned stub once, then nothing; never pushes to the home repo', async () => {
+  const gh = fakeGitHub(generateKeys().recipient)
+  const app = githubApp({ appId: 123, pem: PEM, fetchImpl: gh.fetchImpl })
+  const runners = await discoverRunners(app, { home: HOME, accounts: ['org1', 'org2'] })
+  const r1 = await provision({ runners, home: HOME, sha: SHA, fetchImpl: gh.fetchImpl })
+  assert.equal(gh.calls.puts, 2)
+  assert.ok(!gh.calls.files[HOME], 'home repo untouched')
+  assert.equal(gh.calls.files['org1/tests_runner'].text, stubYaml({ home: HOME, sha: SHA }))
+  assert.ok(gh.calls.files['org1/tests_runner'].text.includes(`uses: ${HOME}/.github/workflows/shard-core.yml@${SHA}`))
+  assert.ok(Object.values(r1).every((x) => x.state === 'ready'))
+  await provision({ runners, home: HOME, sha: SHA, fetchImpl: gh.fetchImpl })
+  assert.equal(gh.calls.puts, 2, 'idempotent: an up to date stub is not pushed again')
+})
+
+test('coordinator: one App key drives everything; narrowed tokens, secrets via stdin, sealed bundle, infra retry; pull decrypts on the PC', async () => {
+  const keys = generateKeys()
+  const gh = fakeGitHub(keys.recipient), ex = fakeExec()
+  const outDir = tmp(), written = []
+  const r = await coordinate({ appId: 123, pem: PEM, home: HOME, sha: SHA, accounts: ['org1', 'org2'], source: 'me/app', ref: 'qa/branch', recipient: keys.recipient,
+    testSecrets: { STRIPE_TEST_KEY: 'sk_test_SECRET', github_token: 'ghs_x', FLEET_APP_PRIVATE_KEY: 'pem', OTHER: 'unused' },
+    outDir, fetchImpl: gh.fetchImpl, exec: ex.exec, pollMs: 1, retryWaitMs: 1, log: (m) => written.push(m), write: (m) => written.push(m) })
+
+  const srcMint = gh.calls.minted.filter((x) => x.inst === '9' && x.narrow.permissions)
+  assert.ok(srcMint.length && srcMint.every((x) => JSON.stringify(x.narrow) === JSON.stringify({ repositories: ['app'], permissions: { contents: 'read' } })), 'source token: one repo, contents read only')
+  for (const t of gh.calls.minted) assert.ok(written.includes(`::add-mask::${t.token}\n`), 'every minted token is masked')
+  assert.ok(!gh.calls.touched.has('stranger/tests_runner') && !gh.calls.touched.has('org2/blog'))
+
+  const dispatched = gh.calls.dispatch.filter((d) => d.batch.startsWith('b-'))
+  assert.deepEqual(dispatched.flatMap((d) => d.units.split(',')).sort(), ['flaky-infra', 'ok-1', 'ok-2', 'red'], 'agent units never go to a runner')
+  assert.ok(gh.calls.dispatch.every((d) => d.source === 'me/app' && d.ref === 'qa/branch' && d.recipient === keys.recipient))
+  const retry = gh.calls.dispatch.filter((d) => d.batch.startsWith('retry-'))
+  assert.equal(retry.length, 1); assert.equal(retry[0].units, 'flaky-infra')
+  assert.notEqual(retry[0].repo, dispatched.find((d) => d.units.split(',').includes('flaky-infra')).repo, 'infra retried on another runner')
+
+  const sets = ex.calls.filter((c) => c.args[1] === 'set'), dels = ex.calls.filter((c) => c.args[1] === 'delete')
+  assert.deepEqual([...new Set(sets.map((c) => c.args[2]))].sort(), ['SOURCE_REPO_TOKEN', 'STRIPE_TEST_KEY'], 'only the declared test secrets are copied')
+  assert.ok(sets.find((c) => c.args[2] === 'STRIPE_TEST_KEY').input === 'sk_test_SECRET')
+  assert.equal(new Set(sets.map((c) => c.args[4])).size, 3, 'secrets set on all 3 runners')
+  assert.ok(sets.every((c) => c.token === tokenFor(INSTALLS.find((i) => i.repos.some((x) => x.full_name === c.args[4])).id, { repositories: [c.args[4].split('/')[1]] })), 'each runner with its own narrowed token')
+  assert.equal(dels.length, 6, 'per-run secrets deleted from every runner at the end')
+  for (const c of ex.calls) for (const s of ['sk_test_SECRET', ...gh.calls.minted.map((x) => x.token)]) assert.ok(!c.args.join(' ').includes(s), 'no secret in argv')
+
+  const files = fs.readdirSync(r.bundle, { recursive: true }).map(String).filter((f) => fs.statSync(path.join(r.bundle, f)).isFile())
+  assert.equal(files.filter((f) => f.endsWith('.qaf')).length, 4)
+  for (const f of files) {
+    const t = fs.readFileSync(path.join(r.bundle, f), 'latin1')
+    for (const secret of ['sk_test_SECRET', keys.identity, 'private log', ...gh.calls.minted.map((x) => x.token)]) assert.ok(!t.includes(secret), `${secret.slice(0, 12)} not in ${f}`)
+  }
+  const pub = JSON.parse(fs.readFileSync(path.join(r.bundle, 'run.json'), 'utf8'))
+  assert.equal(pub.results.red.status, 'fail'); assert.equal(pub.results['flaky-infra'].status, 'pass'); assert.equal(pub.results['ok-1'].durationSec, 240)
+
+  // on the PC: gh run download puts the bundle in a folder; pull decrypts it with the local key
+  const pcHome = tmp(), proj = project()
+  fs.writeFileSync(path.join(pcHome, 'identity.key'), keys.identity)
+  const pcExec = (cmd, args) => {
+    if (args[0] === 'run' && args[1] === 'view') return { status: 0, stdout: JSON.stringify({ status: 'completed', conclusion: 'failure', url: 'u' }) }
+    if (args[0] === 'run' && args[1] === 'download') { const dir = args[args.indexOf('--dir') + 1]; fs.cpSync(outDir, dir, { recursive: true }); return { status: 0, stdout: '' } }
+    return { status: 1, stderr: `unexpected gh ${args.join(' ')}` }
+  }
+  const got = await local.pull({ ghRun: '999', projectDir: proj, home: HOME, exec: pcExec, cfg: { outDir: path.join(pcHome, 'runs'), identityPath: path.join(pcHome, 'identity.key') }, log: () => {} })
+  assert.equal(got.results.red.status, 'fail'); assert.equal(got.results.red.junit.failures, 1)
+  assert.ok(fs.readFileSync(path.join(got.results['ok-1'].dir, 'qa-fleet-meta', 'unit.log'), 'utf8').includes('private log'), 'decrypted on the PC')
+  assert.equal(got.summary.pass, 3); assert.equal(got.summary.fail, 1); assert.ok(fs.existsSync(got.summaryPath))
+  assert.equal(JSON.parse(fs.readFileSync(path.join(proj, '.qa-fleet', 'timings.json'), 'utf8'))['ok-1'], 3)
+})
+
+test('status mode lists runners without dispatching; dry plan never dispatches', async () => {
+  const gh = fakeGitHub(generateKeys().recipient), outDir = tmp()
+  const r = await coordinate({ mode: 'status', appId: 123, pem: PEM, home: HOME, sha: SHA, accounts: ['org1'], outDir, fetchImpl: gh.fetchImpl, exec: fakeExec().exec, log: () => {}, write: () => {} })
+  assert.deepEqual(r.status.runners.map((x) => [x.repo, x.state]), [[HOME, 'ready'], ['org1/tests_runner', 'ready']])
+  assert.ok(fs.existsSync(path.join(outDir, 'status.json')))
   assert.equal(gh.calls.dispatch.length, 0)
-  assert.equal(r.plan.units, 4, 'the local explorer unit is never planned on a runner')
+  const p = await fleet.makePlan({ cfg: { runners: [{ name: 'a', maxParallel: 2 }, { name: 'b', maxParallel: 2 }] }, projectDir: project() })
+  assert.equal(p.units, 4, 'the local explorer unit is never planned on a runner')
+})
+
+test('PC side: start the coordinator through gh with the body on stdin; keygen keeps the private key local', () => {
+  const ex = []
+  const exec = (cmd, args, o = {}) => { ex.push({ args, input: o.input }); return { status: 0, stdout: args[0] === 'api' ? JSON.stringify({ workflow_run_id: 42 }) : '' } }
+  const r = local.startRemote({ source: 'me/app', ref: 'qa/branch', only: ['a'], home: HOME, exec })
+  assert.equal(r.ghRunId, '42')
+  assert.deepEqual(ex[0].args.slice(0, 4), ['api', '-X', 'POST', `repos/${HOME}/actions/workflows/fleet.yml/dispatches`])
+  assert.deepEqual(JSON.parse(ex[0].input).inputs, { mode: 'run', source: 'me/app', ref: 'qa/branch', only: 'a', tags: '' })
+  assert.throws(() => local.startRemote({ source: 'bad', ref: 'x', home: HOME, exec }), /owner\/name/)
+  const h = tmp(), cfg = { outDir: path.join(h, 'runs'), identityPath: path.join(h, 'identity.key') }
+  const k = local.keygen({ home: HOME, exec, cfg })
+  assert.ok(fs.readFileSync(cfg.identityPath, 'utf8').startsWith('qafsec1:'))
+  const v = ex.find((x) => x.args[0] === 'variable')
+  assert.equal(v.input, k.recipient); assert.ok(!JSON.stringify(ex).includes('qafsec1:'), 'the private key never leaves the PC')
+  const m = local.manifest({ home: HOME, port: 5 })
+  assert.deepEqual(Object.keys(m.default_permissions).sort(), ['actions', 'administration', 'contents', 'metadata', 'secrets', 'workflows'])
+  assert.equal(m.hook_attributes.active, false)
 })
 
 test('MCP server: initialize, tools/list, fleet_plan, errors as tool results', async () => {
-  const { home, project } = setup()
-  const p = spawn(process.execPath, [new URL('../mcp/index.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')], { env: { ...process.env, QA_FLEET_CONFIG: path.join(home, 'fleet.json'), QA_FLEET_GITHUB_API: 'http://127.0.0.1:9' } })
+  const proj = project()
+  const p = spawn(process.execPath, [new URL('../mcp/index.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')], { env: { ...process.env, QA_FLEET_HOME: tmp(), QA_FLEET_REPO: HOME } })
   const pending = new Map(); let buf = ''
   p.stdout.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1); pending.get(m.id)?.(m) } })
   let id = 0
   const rpc = (method, params) => new Promise((res) => { const k = ++id; pending.set(k, res); p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: k, method, params }) + '\n') })
   try {
     const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } })
-    assert.equal(init.result.serverInfo.name, 'qa-fleet')
+    assert.equal(init.result.serverInfo.name, 'tests-runner')
     const tools = (await rpc('tools/list', {})).result.tools.map((t) => t.name)
-    for (const t of ['fleet_status', 'fleet_plan', 'fleet_run', 'fleet_watch', 'fleet_collect', 'fleet_cancel', 'fleet_runs', 'fleet_coordinate', 'fleet_pull', 'fleet_explore', 'fleet_tokens']) assert.ok(tools.includes(t), t)
-    const planRes = await rpc('tools/call', { name: 'fleet_plan', arguments: { project } })
-    const plan = JSON.parse(planRes.result.content[0].text)
+    assert.deepEqual(tools.sort(), ['fleet_explore', 'fleet_plan', 'fleet_pull', 'fleet_result', 'fleet_run', 'fleet_runners', 'fleet_runs'])
+    const plan = JSON.parse((await rpc('tools/call', { name: 'fleet_plan', arguments: { project: proj } })).result.content[0].text)
     assert.equal(plan.units, 4)
-    const st = await rpc('tools/call', { name: 'fleet_status', arguments: {} })
-    assert.ok(!st.result.content[0].text.includes('tok1'), 'tokens are never returned')
-    const bad = await rpc('tools/call', { name: 'fleet_watch', arguments: { runId: 'nope' } })
+    const bad = await rpc('tools/call', { name: 'fleet_run', arguments: { source: 'nope', ref: 'x' } })
     assert.equal(bad.result.isError, true)
   } finally { p.kill() }
-})
-
-test('coordinator: sealed card, masks, sealed-only bundle, public infra retry; pull decrypts on the PC', async () => {
-  const { project, keys } = setup()
-  const units = fs.readFileSync(path.join(project, '.qa-fleet', 'units.json'))
-  const card = { card: CARD_SCHEMA, runners: [1, 2].map((i) => ({ owner: `org${i}`, repo: 'qa-fleet-runner', token: `tok${i}`, maxParallel: 2 })), coordinator: { repo: 'org1/qa-fleet-runner' },
-    source: { name: 'app', repo: 'me/app', readToken: 'tokSRC', testBranch: 'qa/branch' }, secrets: { STRIPE_TEST_KEY: 'sk_test_SECRET' }, results: { identity: keys.identity } }
-  const { sealed, key } = sealCard(card)
-  const inner = openSealedCard(sealed, key)
-  assert.equal(inner.secrets, undefined, 'test secrets are not in the sealed card')
-  assert.equal(inner.results, undefined, 'the result key is not in the sealed card')
-  assert.throws(() => openSealedCard(sealed, generateKeys().identity), /wrong key/)
-
-  const route = async (repo, rest, u, init, J) => {
-    if (repo !== 'me/app') return null
-    assert.equal(init.headers.Authorization, 'Bearer tokSRC', 'the source is read with its read-only token')
-    if (rest === '/contents/.qa-fleet/units.json') { assert.equal(u.searchParams.get('ref'), 'qa/branch'); return J({ content: units.toString('base64'), encoding: 'base64' }) }
-    return J({ message: 'Not Found' }, 404)
-  }
-  const gh = fakeGitHub(keys.recipient, { route })
-  const outDir = tmp(), written = []
-  const r = await coordinate({ sealed, key, source: 'app', ref: 'qa/branch', outDir, fetchImpl: gh.fetchImpl, pollMs: 1, log: (m) => written.push(m), write: (m) => written.push(m) })
-  for (const t of ['tok1', 'tok2', 'tokSRC']) assert.ok(written.includes(`::add-mask::${t}\n`), `mask ${t}`)
-  assert.equal(gh.calls.dispatch.filter((d) => d.batch.startsWith('retry-')).length, 1, 'infra retried once from the public signal')
-  const files = fs.readdirSync(r.bundle, { recursive: true }).map(String)
-  assert.deepEqual(files.filter((f) => f.endsWith('.qaf')).length, 4)
-  assert.ok(!files.some((f) => f.includes('units') && f.endsWith('.log')), 'nothing decrypted in the bundle')
-  for (const f of files.filter((x) => fs.statSync(path.join(r.bundle, x)).isFile())) {
-    const t = fs.readFileSync(path.join(r.bundle, f), 'latin1')
-    for (const secret of ['tok1', 'tok2', 'tokSRC', 'sk_test_SECRET', keys.identity, 'private log']) assert.ok(!t.includes(secret), `${secret} not in ${f}`)
-  }
-  const pub = JSON.parse(fs.readFileSync(path.join(r.bundle, 'run.json'), 'utf8'))
-  assert.equal(pub.results.red.status, 'fail'); assert.equal(pub.results['flaky-infra'].status, 'pass'); assert.equal(pub.results['ok-1'].durationSec, 240)
-
-  // pull on the PC: download fleet-bundle of the coordinator run, decrypt with the local key
-  const zip = makeZip(files.filter((x) => fs.statSync(path.join(r.bundle, x)).isFile()).map((f) => [f.replaceAll('\\', '/'), fs.readFileSync(path.join(r.bundle, f))]))
-  const pc = { ...cardToConfig(card, 'card'), outDir: tmp() }
-  const pullFetch = async (url, init) => {
-    const p = new URL(url).pathname
-    assert.equal(init.headers.Authorization, 'Bearer tok1', 'pull uses the coordinator runner token')
-    if (p.endsWith('/actions/runs/999')) return new Response(JSON.stringify({ status: 'completed' }), { status: 200 })
-    if (p.endsWith('/actions/runs/999/artifacts')) return new Response(JSON.stringify({ artifacts: [{ id: 7, name: BUNDLE, expired: false }] }), { status: 200 })
-    if (p.endsWith('/actions/artifacts/7/zip')) return new Response(zip, { status: 200 })
-    return new Response('{}', { status: 404 })
-  }
-  const got = await pull({ cfg: pc, ghRun: '999', projectDir: project, fetchImpl: pullFetch, log: () => {} })
-  assert.equal(got.results.red.status, 'fail'); assert.equal(got.results.red.junit.failures, 1)
-  assert.ok(fs.readFileSync(path.join(got.results['ok-1'].dir, 'qa-fleet-meta', 'unit.log'), 'utf8').includes('private log'), 'decrypted on the PC')
-  assert.equal(got.summary.pass, 3); assert.ok(fs.existsSync(got.summaryPath))
 })

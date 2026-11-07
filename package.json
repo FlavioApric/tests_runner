@@ -1,11 +1,18 @@
 {
  "name": "tests_runner",
- "version": "0.1.0",
- "description": "Run any project's tests on N free public GitHub runner repos in parallel, with encrypted results and an MCP server for Claude Code",
+ "version": "0.2.0",
+ "description": "Run any project's tests on many free public GitHub runner repos in parallel, driven by one GitHub App from one home repo; encrypted results, MCP server for Claude Code",
  "type": "module",
  "private": true,
  "license": "MIT",
- "bin": { "fleet": "cli/fleet.mjs", "qa-fleet-mcp": "mcp/index.mjs" },
- "engines": { "node": ">=20.11" },
- "scripts": { "test": "node --test \"test/*.test.mjs\"" }
+ "bin": {
+  "fleet": "cli/fleet.mjs",
+  "tests-runner-mcp": "mcp/index.mjs"
+ },
+ "engines": {
+  "node": ">=20.11"
+ },
+ "scripts": {
+  "test": "node --test \"test/*.test.mjs\""
+ }
 }

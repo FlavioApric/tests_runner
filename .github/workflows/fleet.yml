@@ -1,0 +1,80 @@
+# tests_runner coordinator. The ONLY entry point of the fleet: started from a PC with the gh CLI
+#   node cli/fleet.mjs run --source owner/app --ref my-tests      (or: gh workflow run fleet.yml -f mode=run ...)
+# Its only credential is the fleet GitHub App (vars.FLEET_APP_ID + environment secret FLEET_APP_PRIVATE_KEY, main only).
+# With it, it discovers the runner repos (App installations), provisions them, sets per-run secrets, dispatches the shards,
+# retries infrastructure failures once elsewhere and uploads the SEALED results (only your PC can open them: fleet pull).
+name: tests_runner fleet
+run-name: "fleet ${{ inputs.mode }} ${{ inputs.source }}@${{ inputs.ref }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'run = test the source; status = list runners; provision = only update the runners'
+        type: choice
+        options: [run, status, provision]
+        default: run
+      source: { description: 'Private source repo owner/name (the App must be installed on it)', required: false, type: string, default: '' }
+      ref: { description: 'Pushed branch, tag or sha of the source', required: false, type: string, default: '' }
+      only: { description: 'Comma separated unit ids (empty = all)', required: false, type: string, default: '' }
+      tags: { description: 'Comma separated tags (empty = all)', required: false, type: string, default: '' }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  fleet:
+    name: coordinator
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    environment: fleet
+    env:
+      IN_MODE: ${{ inputs.mode }}
+      IN_SOURCE: ${{ inputs.source }}
+      IN_REF: ${{ inputs.ref }}
+      IN_ONLY: ${{ inputs.only }}
+      IN_TAGS: ${{ inputs.tags }}
+    steps:
+      - name: Validate inputs
+        run: |
+          set -eu
+          ok() { printf '%s' "$1" | grep -Eq "$2"; }
+          ok "$IN_MODE" '^(run|status|provision)$' || { echo "::error::bad mode"; exit 1; }
+          if [ "$IN_MODE" = run ]; then
+            ok "$IN_SOURCE" '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "::error::source must be owner/name"; exit 1; }
+            ok "$IN_REF" '^[A-Za-z0-9._/-]{1,200}$' || { echo "::error::bad ref"; exit 1; }
+            case "$IN_REF" in *..*|-*) echo "::error::bad ref"; exit 1;; esac
+          fi
+          ok "$IN_ONLY" '^[A-Za-z0-9._,-]{0,4000}$' || { echo "::error::bad only"; exit 1; }
+          ok "$IN_TAGS" '^[A-Za-z0-9._,-]{0,400}$' || { echo "::error::bad tags"; exit 1; }
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22 }
+
+      - name: Coordinate
+        env:
+          FLEET_APP_ID: ${{ vars.FLEET_APP_ID }}
+          FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+          FLEET_RECIPIENT: ${{ vars.FLEET_RECIPIENT }}
+          FLEET_ACCOUNTS: ${{ vars.FLEET_ACCOUNTS }}
+          FLEET_TEST_SECRETS: ${{ toJSON(secrets) }}
+          FLEET_HOME: ${{ github.repository }}
+          FLEET_SHA: ${{ github.sha }}
+        run: node cli/fleet.mjs coordinate --out "$RUNNER_TEMP/fleet-out"
+
+      - name: Upload bundle (sealed results + public unit states)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fleet-bundle
+          path: ${{ runner.temp }}/fleet-out
+          retention-days: 3
+          if-no-files-found: ignore
