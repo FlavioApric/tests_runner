@@ -63,6 +63,17 @@ jobs:
           npm run test:covers
           node scripts/launch/check-hex.mjs
           npm run test:launch
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+      - name: Type-check every edge function (deno check)
+        timeout-minutes: 15
+        run: |
+          if [ -d supabase/functions ]; then
+            fail=0; for d in supabase/functions/*/; do n=$(basename "$d"); case "$n" in _*) continue;; esac; [ -f "$d/index.ts" ] || continue
+              (cd supabase/functions && deno check --quiet --node-modules-dir=none "$n/index.ts") || { echo "::error::deno check failed: $n"; fail=1; }
+            done; exit $fail
+          fi
       - name: Release unit tests (all sessions) and Curator
         run: |
           if node -e "process.exit(require('./package.json').scripts['test:r35'] ? 0 : 1)"; then npm run test:r35; else echo "no test:r35 on this ref"; fi

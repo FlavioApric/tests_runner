@@ -87,6 +87,12 @@ jobs:
       - name: Start local Supabase
         timeout-minutes: 20
         run: npm run db:local:start
+      - name: Warm up edge functions (first call downloads each function's dependencies; done here, not inside a test)
+        timeout-minutes: 10
+        run: |
+          for d in supabase/functions/*/; do n=$(basename "$d"); case "$n" in _*) continue;; esac; [ -f "$d/index.ts" ] || continue
+            code=$(curl -s -o /dev/null -w '%{http_code}' -m 120 -X OPTIONS "http://127.0.0.1:54321/functions/v1/$n" || echo timeout); echo "$n $code"
+          done
       - name: SQL tests of the release (smoke job only, local Supabase)
         if: matrix.name == 'smoke'
         timeout-minutes: 15
@@ -102,7 +108,7 @@ jobs:
         if: always()
         run: |
           c=$(docker ps --format '{{.Names}}' | grep -m1 edge_runtime || true)
-          if [ -n "$c" ]; then docker logs "$c" 2>&1 | grep -E '^[a-z-]+ [a-z_ ]+ [0-9]+ms$' | tail -60 || true; fi
+          if [ -n "$c" ]; then docker logs "$c" 2>&1 | grep -oE '[a-z-]+ [a-z_ ]+ [0-9]+ms' | tail -60 || true; fi
       - name: Failure context (page snapshot of each failed test, edge function log)
         if: failure()
         run: |
