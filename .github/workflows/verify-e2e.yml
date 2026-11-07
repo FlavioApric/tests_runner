@@ -73,7 +73,12 @@ jobs:
         timeout-minutes: 15
         # A stalled download (seen 3 times on 6/11) gets a second attempt; this retries the setup download only, never a test.
         run: |
-          for i in 1 2; do timeout 420 npx playwright install --with-deps chromium webkit && exit 0; echo "browser install attempt $i stalled or failed"; done; exit 1
+          timeout 420 npx playwright install --with-deps chromium webkit && exit 0
+          echo "attempt 1 stalled or failed: switching apt from the Azure mirror to archive.ubuntu.com"
+          sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
+          sudo apt-get update -qq || true
+          timeout 420 npx playwright install --with-deps chromium webkit && exit 0
+          echo "attempt 2 failed"; exit 1
       - name: Free disk space
         timeout-minutes: 10
         run: |
