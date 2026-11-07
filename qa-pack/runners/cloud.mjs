@@ -2,9 +2,10 @@
 // tests_runner main branch), fold the unit results into the SAME <paths.state>/state.json, write CLOUD_REPORT.md,
 // then run the steps that have no fleet unit (gates, validation) locally with `flow --resume --only ...`.
 //   node qa-pack/runners/pack.mjs flow --target cloud [--project <dir>] [--only step|unit,...] [--ref <branch>]
-//        [--source <fleet source name>] [--dry] [--no-retry]
-// Env: QA_FLEET_DIR = a checkout of the fleet (tests_runner main: lib/fleet.mjs, lib/units.mjs, lib/config.mjs);
-//      default ~/dev/tests_runner.
+//        [--source <owner/repo>] [--dry]
+// Env: QA_FLEET_DIR = a checkout of the fleet (tests_runner main: lib/local.mjs, lib/fleet.mjs, lib/units.mjs);
+//      default ~/dev/tests_runner. The only credential is the gh CLI login: the fleet's coordinator workflow
+//      (fleet.yml, driven by the fleet GitHub App) does the rest; this script starts it, waits and decrypts.
 // Rules: a failed test is never retried (the fleet retries only infrastructure, once); gate steps never run in the
 // cloud; nothing is invented: a step without a unit result keeps its previous state (or stays deferred).
 import fs from 'node:fs'
@@ -35,7 +36,7 @@ export function foldResults(units, results, steps) {
 export async function cloudFlow(cfg, a) {
   const FLEET = fleetDir()
   if (!fs.existsSync(path.join(FLEET, 'lib', 'fleet.mjs'))) { console.error(`cloud: fleet lib not found in ${FLEET} (set QA_FLEET_DIR to a tests_runner main checkout)`); return 3 }
-  const fleet = await imp(FLEET, 'fleet.mjs'), { loadUnits } = await imp(FLEET, 'units.mjs'), { loadConfig } = await imp(FLEET, 'config.mjs')
+  const fleet = await imp(FLEET, 'fleet.mjs'), { loadUnits } = await imp(FLEET, 'units.mjs'), local = await imp(FLEET, 'local.mjs')
   const projectDir = path.dirname(cfg.abs('fleet'))
   const { units } = loadUnits(projectDir)
   const steps = loadFlow(cfg).filter((s) => s.applies)
@@ -47,20 +48,24 @@ export async function cloudFlow(cfg, a) {
   const only = a.opt('--only')?.split(','), dry = a.flag('--dry')
   if (!dry && !a.opt('--ref')) {
     const local = git('rev-parse', 'HEAD'), remote = git('rev-parse', `origin/${ref}`)
-    if (!remote || local !== remote) { console.error(`cloud: the runners test the PUSHED ref: origin/${ref} is ${remote ? remote.slice(0, 8) : 'missing'}, local HEAD ${local.slice(0, 8)}. Push first (owner approval) or pass --ref.`); return 3 }
+    if (!remote || local !== remote) { console.error(`cloud: the runners test the PUSHED ref: origin/${ref} is ${remote ? remote.slice(0, 8) : 'missing'}, local HEAD ${local.slice(0, 8)}. Push the test branch first, or pass --ref.`); return 3 }
   }
   console.log(`cloud flow: ${source}@${ref}, ${units.length} unit(s) in ${cfg.paths.fleet}/units.json; local steps: ${localSteps.join(', ') || 'none'}`)
   const printPlan = (p, note) => { for (const x of p.assignments) console.log(`> ${x.runner}: ${x.units.length} unit(s), about ${x.estWallMinutes} min: ${x.units.join(', ')}`); console.log(`estimated wall time ${p.estWallMinutes} min plus queueing${note}`) }
-  let fcfg
-  try { fcfg = loadConfig() } catch (e) {
-    if (!dry) { console.error(`cloud: ${e.message}\nSet up the runners first (the fleet skill, "init"), or run the flow locally.`); return 3 }
-    console.log(`fleet config not usable here (${e.code === 'NO_CONFIG' ? 'none yet' : 'incomplete'}): offline plan`)
+  if (dry) {
     const p = await fleet.makePlan({ cfg: { runners: [1, 2, 3].map((i) => ({ name: `runner-${i}`, maxParallel: 20 })) }, projectDir, only })
-    printPlan(p, ' (offline plan: no fleet config yet, 3 runners x 20 slots assumed)')
+    printPlan(p, ' (offline plan, 3 runners x 20 slots assumed: node <fleet>/cli/fleet.mjs runners shows the real ones)')
     return 0
   }
-  const r = await fleet.runAll({ cfg: fcfg, projectDir, source, ref, only, dry, retryInfra: !a.flag('--no-retry'), log: (m) => console.log(`  ${m}`) })
-  if (r.dry) { printPlan(r.plan, ''); return 0 }
+  if (!/^[\w.-]+\/[\w.-]+$/.test(source ?? '')) { console.error(`cloud: --source (or fleet.source in qa.config.json) must be owner/repo, got "${source}"`); return 2 }
+  let r
+  try {
+    const start = local.startRemote({ source, ref, only: only ?? [] })
+    console.log(`  coordinator: ${start.url}`)
+    await local.waitRemote(start.ghRunId, { log: (m) => console.log(`  ${m}`) })
+    r = await local.pull({ ghRun: start.ghRunId, projectDir, log: (m) => console.log(`  ${m}`) })
+    r.wallMinutes = r.wallMinutes ?? '?'
+  } catch (e) { console.error(`cloud: ${e.message}\nThe fleet is not ready (node <fleet>/cli/fleet.mjs runners): run the flow locally.`); return 3 }
 
   const sp = path.join(cfg.abs('state'), 'state.json')
   const state = fs.existsSync(sp) ? readJson(sp) : { schema: 'qa-pack/state@1', steps: {} }

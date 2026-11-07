@@ -11,17 +11,17 @@ One runner: `node qa-pack/runners/pack.mjs <command> --project <dir>` (the dir h
 ## Arguments
 - `/qa` or `/qa status`: `pack.mjs status`, then read `<paths.state>/FLOW_REPORT.md` and `DEFERRED.md` when they
   exist. Reply with: modules by status, what is blocked and by what, and the single next action.
-- `/qa run` or `/qa resume`: FIRST ask with AskUserQuestion where to run (one question, header "Where"):
-  1. **Local** (this machine): `pack.mjs flow` (or `flow --resume`). Steps whose capabilities are missing
-     (`pack.mjs capabilities`) are written to `DEFERRED.md`, never passed.
-  2. **Cloud fleet** (the `fleet` skill on the tests_runner main branch: the same units spread over public runner
-     repos). Check the fleet card and the runner states with that skill first. The runners test the PUSHED branch:
-     if local HEAD differs from `origin/<branch>`, ask the owner before any push. Run
+- `/qa run` or `/qa resume`: do NOT ask where to run. Decide:
+  1. **Cloud fleet** when the fleet is ready (`node <tests_runner>/cli/fleet.mjs runners` shows a `ready` runner):
+     the same units spread over public runner repos, see the `fleet` skill and `CLAUDE.md` of tests_runner main.
+     The runners test the PUSHED branch: commit and push the test branch first (pre-authorised: it is add-only). Run
      `pack.mjs flow --target cloud --dry` to show the plan, then without `--dry` in the background, and read
      `<paths.state>/CLOUD_REPORT.md` and `FLOW_REPORT.md` when it ends. A `deferred` step with `cloud-infra:` is a
      runner problem (already retried once), not a test result. Explorer reports are leads: reproduce a finding
      locally before calling it a defect.
-  If the fleet is not set up, say what is missing and fall back to Local.
+  2. **Local** (this machine) when the fleet is not ready, or for one small slice: `pack.mjs flow` (or
+     `flow --resume`). Steps whose capabilities are missing (`pack.mjs capabilities`) are written to
+     `DEFERRED.md`, never passed. Say in one line why the fleet was not used.
 - `/qa run J03`: `pack.mjs flow --only <step ids>`; the verdict of `status` is always over all modules.
 - `/qa deferred`: show `DEFERRED.md`; for each item say who can resolve it. Human-only items are asked once, at the end.
 - `/qa new <feature>`: `/qa-new-module`. `/qa fix <id>`: `/qa-fix`. `/qa gate`: `/qa-gate`.
