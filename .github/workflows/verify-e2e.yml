@@ -113,6 +113,14 @@ jobs:
         if: failure()
         run: |
           for f in $(find test-results -name error-context.md 2>/dev/null | head -10); do echo "==== $f"; head -c 5000 "$f"; echo; done
+          db=$(docker ps --format '{{.Names}}' | grep -m1 '^supabase_db' || true)
+          if [ -n "$db" ]; then
+            echo "==== database: non-idle sessions and lock waits ($db)"
+            docker exec "$db" psql -U postgres -d postgres -X -A -F ' | ' -c "select pid, usename, application_name, state, wait_event_type, wait_event, round(extract(epoch from now()-xact_start)) as xact_s, left(regexp_replace(query, '\\s+', ' ', 'g'), 160) as query from pg_stat_activity where state <> 'idle' and pid <> pg_backend_pid() order by xact_start" || true
+            docker exec "$db" psql -U postgres -d postgres -X -A -F ' | ' -c "select blocked.pid as blocked_pid, blocking.pid as blocking_pid, left(regexp_replace(blocking.query, '\\s+', ' ', 'g'), 160) as blocking_query from pg_stat_activity blocked join pg_stat_activity blocking on blocking.pid = any(pg_blocking_pids(blocked.pid))" || true
+          fi
+          a=$(docker ps --format '{{.Names}}' | grep -m1 '^supabase_auth' || true)
+          if [ -n "$a" ]; then echo "==== auth log tail ($a)"; docker logs --tail 80 "$a" 2>&1 | grep -viE 'apikey|authorization|bearer|password|token' || true; fi
           c=$(docker ps --format '{{.Names}}' | grep -m1 edge_runtime || true)
           if [ -n "$c" ]; then echo "==== edge runtime log ($c)"; docker logs --tail 150 "$c" 2>&1 | grep -viE "apikey|authorization|bearer|service_role|password" || true; fi
       - name: Stop local Supabase
