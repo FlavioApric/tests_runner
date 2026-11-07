@@ -13,12 +13,14 @@ import { coordinate } from '../lib/coordinator.mjs'
 import { appJwt, githubApp, discoverRunners } from '../lib/app.mjs'
 import { provision, stubYaml, STUB_PATH } from '../lib/provision.mjs'
 import * as local from '../lib/local.mjs'
+import { parseRunnerTokens } from '../lib/app.mjs'
 import { makeZip } from './helpers.mjs'
 
 const TAR = process.platform === 'win32' && fs.existsSync('C:\\Windows\\System32\\tar.exe') ? 'C:\\Windows\\System32\\tar.exe' : 'tar'
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'qaf-e2e-'))
 const SHA = 'a'.repeat(40)
 const HOME = 'me/tests_runner'
+const PAT = 'github_pat_FAKE_runner_token_0123456789'
 const UNITS = { schema: 'qa-fleet/units@1', units: [
   { id: 'ok-1', cmd: 'true', estMinutes: 3, secrets: ['STRIPE_TEST_KEY'] }, { id: 'ok-2', cmd: 'true', estMinutes: 3 }, { id: 'red', cmd: 'false', estMinutes: 2 }, { id: 'flaky-infra', cmd: 'true', estMinutes: 1 },
   { id: 'explore-x', agent: { charter: 'c.md' } },
@@ -84,7 +86,7 @@ function fakeGitHub(recipient) {
       return J({ message: 'Not Found' }, 404)
     }
     const inst = INSTALLS.find((i) => i.repos.some((r) => r.full_name === repo))
-    assert.equal(auth, `Bearer ${tokenFor(inst.id, { repositories: [repo.split('/')[1]] })}`, `${repo} is reached with a token narrowed to that repo`)
+    assert.equal(auth, inst ? `Bearer ${tokenFor(inst.id, { repositories: [repo.split('/')[1]] })}` : `Bearer ${PAT}`, `${repo} is reached with a token narrowed to that repo`)
     if (rest === '') return J({ private: false })
     if (rest === `/contents/${STUB_PATH}`) {
       if (init.method === 'PUT') { calls.puts++; const b = JSON.parse(init.body); calls.files[repo] = { sha: `s${calls.puts}`, text: Buffer.from(b.content, 'base64').toString('utf8') }; return J({}, 201) }
@@ -255,4 +257,43 @@ test('MCP server: initialize, tools/list, fleet_plan, errors as tool results', a
     const bad = await rpc('tools/call', { name: 'fleet_run', arguments: { source: 'nope', ref: 'x' } })
     assert.equal(bad.result.isError, true)
   } finally { p.kill() }
+})
+
+test('token runner: an account that did not install the App joins with one fine-grained token from the fleet secret', async () => {
+  assert.throws(() => parseRunnerTokens('{}'), /array/)
+  assert.throws(() => parseRunnerTokens(JSON.stringify([{ repo: 'x/other', token: PAT }])), /bad repo/)
+  assert.throws(() => parseRunnerTokens(JSON.stringify([{ repo: 'x/tests_runner', token: 'short' }])), /no token/)
+  const keys = generateKeys(), gh = fakeGitHub(keys.recipient), ex = fakeExec(), outDir = tmp(), written = []
+  const runnerTokens = JSON.stringify([{ repo: 'pat/tests_runner', token: PAT }, { repo: 'org1/tests_runner', token: PAT + 'DUP' }])
+  const r = await coordinate({ appId: 123, pem: PEM, home: HOME, sha: SHA, accounts: ['org1'], runnerTokens, source: 'me/app', ref: 'qa/branch', recipient: keys.recipient,
+    testSecrets: { STRIPE_TEST_KEY: 'sk_test_SECRET' }, outDir, fetchImpl: gh.fetchImpl, exec: ex.exec, pollMs: 1, retryWaitMs: 1, log: (m) => written.push(m), write: (m) => written.push(m) })
+  assert.ok(written.includes(`::add-mask::${PAT}\n`), 'the token is masked before anything runs')
+  assert.ok(written.some((m) => String(m).includes('org1/tests_runner: already reached through the App')), 'an App runner wins over a duplicate token')
+  const pub = JSON.parse(fs.readFileSync(path.join(r.bundle, 'run.json'), 'utf8'))
+  assert.ok(pub.batches.some((b) => b.runner === 'pat/tests_runner'), 'the token runner got a batch')
+  assert.ok(gh.calls.files['pat/tests_runner'].text.includes(`shard-core.yml@${SHA}`), 'its stub was written by the coordinator')
+  const patSets = ex.calls.filter((c) => c.args[1] === 'set' && c.args[4] === 'pat/tests_runner')
+  assert.deepEqual(patSets.map((c) => c.args[2]).sort(), ['FLEET_UNIT_SECRETS', 'SOURCE_REPO_TOKEN'])
+  assert.ok(patSets.every((c) => c.token === PAT), 'gh uses the token runner token, through env')
+  for (const c of ex.calls) assert.ok(!c.args.join(' ').includes(PAT), 'the token is never in argv')
+  for (const f of fs.readdirSync(r.bundle, { recursive: true }).map(String).filter((f) => fs.statSync(path.join(r.bundle, f)).isFile())) assert.ok(!fs.readFileSync(path.join(r.bundle, f), 'latin1').includes(PAT), 'not in the bundle')
+})
+
+test('add-runner: checks the token sees a public repo, keeps one local file, uploads the whole list as one secret', async () => {
+  const h = tmp(), ex = []
+  process.env.QA_FLEET_HOME = h
+  try {
+    const exec = (cmd, args, o = {}) => { ex.push({ args, input: o.input }); return { status: 0, stdout: '' } }
+    const ok = async (url, init) => { assert.equal(init.headers.Authorization, `Bearer ${PAT}`); return J({ private: false }) }
+    const r = await local.addRunner({ repo: 'pat/tests_runner', token: PAT, home: HOME, exec, fetchImpl: ok })
+    assert.deepEqual(r.runners, ['pat/tests_runner'])
+    assert.deepEqual(ex[0].args, ['secret', 'set', 'FLEET_RUNNER_TOKENS', '--env', 'fleet', '--repo', HOME])
+    assert.deepEqual(JSON.parse(ex[0].input), [{ repo: 'pat/tests_runner', token: PAT }])
+    await local.addRunner({ repo: 'two/tests_runner_2', token: PAT + 'B', home: HOME, exec, fetchImpl: async () => J({ private: false }) })
+    assert.equal(JSON.parse(ex[1].input).length, 2, 'the whole list is re-uploaded (secrets are write-only)')
+    await assert.rejects(local.addRunner({ repo: 'pat/tests_runner', token: PAT, home: HOME, exec, fetchImpl: async () => J({ private: true }) }), /private/)
+    await assert.rejects(local.addRunner({ repo: 'pat/tests_runner', token: PAT, home: HOME, exec, fetchImpl: async () => J({}, 404) }), /cannot see/)
+    await assert.rejects(local.addRunner({ repo: 'pat/other', token: PAT, home: HOME, exec }), /tests_runner/)
+    for (const e of ex) assert.ok(!e.args.join(' ').includes(PAT))
+  } finally { delete process.env.QA_FLEET_HOME }
 })

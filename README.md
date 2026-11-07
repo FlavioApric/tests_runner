@@ -36,8 +36,9 @@ unlimited minutes on standard runners (4 vCPU, 16 GB, KVM for Android emulators)
    environment `fleet` of this repo; nothing is shown or saved elsewhere.
 3. Open the printed install link: install on **this repo** and on the **app repos** you want to test.
 4. `node cli/fleet.mjs keygen` → result key pair (private key in `~/.qa-fleet/identity.key`).
-5. More runners: each lending account creates an empty public repo `tests_runner`, opens the install link and
-   installs on that repo only; you run `node cli/fleet.mjs allow <their-login>`. Details: [`docs/APP.md`](docs/APP.md).
+5. More runners, two doors ([`docs/APP.md`](docs/APP.md)): the lending account creates an empty public repo `tests_runner`, then
+   either opens the install link and installs on that repo only (you run `node cli/fleet.mjs allow <their-login>`), or hands
+   you one fine-grained token for that repo (you run `node cli/fleet.mjs add-runner <owner>/tests_runner`).
 6. Test keys the units need (test keys only): write `~/.qa-fleet/test-secrets.json` as `{"STRIPE_TEST_KEY":"sk_test_..."}`, then `node cli/fleet.mjs test-secrets`.
 
 `node cli/fleet.mjs runners` shows what the fleet sees.

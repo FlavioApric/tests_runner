@@ -3,6 +3,7 @@
 //   setup-app                      one time: create the fleet GitHub App (one click), store its key in the home repo
 //   keygen [--force]               one time: result key pair (private -> ~/.qa-fleet/identity.key, public -> vars.FLEET_RECIPIENT)
 //   test-secrets [--file f]        upload the test keys units declare (default ~/.qa-fleet/test-secrets.json: {"NAME":"value"})
+//   add-runner owner/tests_runner  lend a repo with ONE fine-grained token instead of installing the App (prompts for the token)
 //   allow  login[,login]           let these accounts' App installations act as runners (vars.FLEET_ACCOUNTS)
 //   install-link                   the link to send to an account that lends a runner repo
 //   runners                        what the coordinator sees: runner repos, state, free parallel jobs
@@ -17,7 +18,7 @@
 //   summary --run <runId>          the summary of a pulled run
 //   init --kind playwright|vitest|jest|pytest|go|maestro|gradle|shell [--shards N] [--project dir]
 // Inside the workflows:
-//   coordinate --out dir           fleet.yml: env FLEET_APP_ID, FLEET_APP_PRIVATE_KEY, FLEET_RECIPIENT, FLEET_TEST_SECRETS (one JSON secret), FLEET_HOME, FLEET_SHA
+//   coordinate --out dir           fleet.yml: env FLEET_APP_ID, FLEET_APP_PRIVATE_KEY, FLEET_RECIPIENT, FLEET_TEST_SECRETS + FLEET_RUNNER_TOKENS (one JSON secret each), FLEET_HOME, FLEET_SHA
 //   matrix   --project src --units a,b       -> JSON matrix for shard-core.yml
 //   unit-env --project src --unit id         -> unit command env as KEY=VALUE lines
 //   secrets-env --names A,B --out file       -> only the named secrets from $UNIT_SECRETS (one JSON secret) into an env file
@@ -53,6 +54,7 @@ try {
       break
     }
     case 'keygen': out(local.keygen({ force: flag('--force') })); break
+    case 'add-runner': out(await local.addRunner({ repo: argv[1] })); break
     case 'test-secrets': out(local.testSecrets({ file: val('--file') })); break
     case 'allow': { const logins = csv(argv[1]); if (!logins.length) die('allow login[,login]'); out(local.allow({ logins })); break }
     case 'install-link': { const i = local.appInfo(); out(i ? i.install : 'unknown on this PC: open the App page (github.com/settings/apps) → Public page → Install'); break }
@@ -89,7 +91,7 @@ try {
     case 'coordinate': {
       const e = process.env
       const outDir = path.resolve(val('--out', 'fleet-out'))
-      const r = await coordinate({ mode: e.IN_MODE || 'run', appId: e.FLEET_APP_ID, pem: e.FLEET_APP_PRIVATE_KEY, home: e.FLEET_HOME, sha: e.FLEET_SHA, accounts: csv(e.FLEET_ACCOUNTS), source: e.IN_SOURCE, ref: e.IN_REF, only: csv(e.IN_ONLY), tags: csv(e.IN_TAGS), recipient: e.FLEET_RECIPIENT, testSecrets: JSON.parse(e.FLEET_TEST_SECRETS || '{}'), outDir, log })
+      const r = await coordinate({ mode: e.IN_MODE || 'run', appId: e.FLEET_APP_ID, pem: e.FLEET_APP_PRIVATE_KEY, home: e.FLEET_HOME, sha: e.FLEET_SHA, accounts: csv(e.FLEET_ACCOUNTS), runnerTokens: e.FLEET_RUNNER_TOKENS, source: e.IN_SOURCE, ref: e.IN_REF, only: csv(e.IN_ONLY), tags: csv(e.IN_TAGS), recipient: e.FLEET_RECIPIENT, testSecrets: JSON.parse(e.FLEET_TEST_SECRETS || '{}'), outDir, log })
       const md = r.summary ? r.summary.markdown + `\nDecrypt on your PC: node cli/fleet.mjs pull --gh-run ${e.GITHUB_RUN_ID ?? '<id>'}\n` : ['| Runner | State | Free jobs | Note |', '|---|---|---|---|', ...r.status.runners.map((x) => `| ${x.repo} | ${x.state} | ${x.freeSlots ?? ''} | ${x.note ?? ''} |`)].join('\n') + '\n'
       if (e.GITHUB_STEP_SUMMARY) fs.appendFileSync(e.GITHUB_STEP_SUMMARY, md)
       out(md)

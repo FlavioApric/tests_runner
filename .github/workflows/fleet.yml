@@ -67,6 +67,7 @@ jobs:
           FLEET_RECIPIENT: ${{ vars.FLEET_RECIPIENT }}
           FLEET_ACCOUNTS: ${{ vars.FLEET_ACCOUNTS }}
           FLEET_TEST_SECRETS: ${{ secrets.FLEET_TEST_SECRETS }}
+          FLEET_RUNNER_TOKENS: ${{ secrets.FLEET_RUNNER_TOKENS }}
           FLEET_HOME: ${{ github.repository }}
           FLEET_SHA: ${{ github.sha }}
         run: node cli/fleet.mjs coordinate --out "$RUNNER_TEMP/fleet-out"

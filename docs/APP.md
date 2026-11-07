@@ -17,6 +17,23 @@ From then on a session only needs `gh auth login` as the owner. Every run, the c
    as secrets of each runner (refreshed every 30 minutes, deleted when the run ends);
 4. dispatches, watches, retries infra once elsewhere, bundles the sealed results.
 
+## Two ways for an account to lend a runner
+
+GitHub has no API to install an App on someone's account (the owner must accept it in a browser), so there are two doors:
+
+| | Install the App (recommended) | Token runner (no browser, no App) |
+|---|---|---|
+| The lending account does | opens the install link once, picks its `tests_runner` repo | creates the public repo and ONE fine-grained token on it, hands the token to the owner |
+| The owner runs | `node cli/fleet.mjs allow <login>` | `node cli/fleet.mjs add-runner <owner>/tests_runner` (prompts for the token) |
+| Credentials | none stored; tokens minted per run, 1 hour | that token, stored as environment secret `FLEET_RUNNER_TOKENS` of the home repo |
+| Expiry | never | the token's expiry (renew: run `add-runner` again) |
+
+Both end in the same runner list; an App runner wins if a repo is reachable both ways. The **owner's own** accounts need the
+App anyway: the App reads the private source repos and runs the home repo.
+
+Token for a token runner: fine-grained, Resource owner = that account, Only select repositories = its `tests_runner`,
+repository permissions Actions, Contents, Workflows, Secrets, Administration (read and write), Metadata (read). Nothing else.
+
 ## App permissions (repository)
 
 | Permission | Access | Why |
@@ -40,6 +57,7 @@ No account permissions, no webhook, no events. The token for the source repo is 
 | Result public key | variable `FLEET_RECIPIENT` | public |
 | Result private key | `~/.qa-fleet/identity.key` on the owner's PC | the owner's sessions |
 | Allowed accounts | variable `FLEET_ACCOUNTS` | public |
+| Token-runner tokens | ONE environment secret `FLEET_RUNNER_TOKENS` (JSON list), uploaded by `add-runner` from `~/.qa-fleet/runner-tokens.json` | `fleet.yml` on main |
 | Test keys (test keys only) | ONE environment secret `FLEET_TEST_SECRETS` (JSON `{"NAME":"value"}`), uploaded with `node cli/fleet.mjs test-secrets` from `~/.qa-fleet/test-secrets.json` | per run, only the names a unit declares are copied to the runners (as the single secret `FLEET_UNIT_SECRETS`) and deleted afterwards |
 
 ## Test keys
@@ -56,7 +74,7 @@ The tool rejects Claude/Anthropic credentials and `GITHUB_*`/`FLEET_*` names.
 - The owner of a runner repo can read what is set there during a run (a 1-hour read token for the source, test
   keys): lend runners only from people you trust, and put only **test** keys in the `fleet` environment.
 - Each runner is reached with a token narrowed to that one repository.
-- To remove a runner: its owner uninstalls the App (or you remove the login from `FLEET_ACCOUNTS`).
+- To remove a runner: its owner uninstalls the App (or you remove the login from `FLEET_ACCOUNTS`); a token runner: delete its entry in `~/.qa-fleet/runner-tokens.json` and run `node cli/fleet.mjs add-runner` for another one, or edit the file and re-upload by adding any runner again (the whole list is uploaded each time).
 - To rotate the App key: App settings → Private keys → Generate, then
   `gh secret set FLEET_APP_PRIVATE_KEY --env fleet --repo <home> < key.pem`, and delete the old key.
 
