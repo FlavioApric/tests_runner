@@ -179,8 +179,8 @@ test('coordinator: one App key drives everything; narrowed tokens, secrets via s
   assert.notEqual(retry[0].repo, dispatched.find((d) => d.units.split(',').includes('flaky-infra')).repo, 'infra retried on another runner')
 
   const sets = ex.calls.filter((c) => c.args[1] === 'set'), dels = ex.calls.filter((c) => c.args[1] === 'delete')
-  assert.deepEqual([...new Set(sets.map((c) => c.args[2]))].sort(), ['SOURCE_REPO_TOKEN', 'STRIPE_TEST_KEY'], 'only the declared test secrets are copied')
-  assert.ok(sets.find((c) => c.args[2] === 'STRIPE_TEST_KEY').input === 'sk_test_SECRET')
+  assert.deepEqual([...new Set(sets.map((c) => c.args[2]))].sort(), ['FLEET_UNIT_SECRETS', 'SOURCE_REPO_TOKEN'], 'one JSON secret for the test keys + the source token')
+  assert.deepEqual(JSON.parse(sets.find((c) => c.args[2] === 'FLEET_UNIT_SECRETS').input), { STRIPE_TEST_KEY: 'sk_test_SECRET' }, 'only the declared test secrets are copied')
   assert.equal(new Set(sets.map((c) => c.args[4])).size, 3, 'secrets set on all 3 runners')
   assert.ok(sets.every((c) => c.token === tokenFor(INSTALLS.find((i) => i.repos.some((x) => x.full_name === c.args[4])).id, { repositories: [c.args[4].split('/')[1]] })), 'each runner with its own narrowed token')
   assert.equal(dels.length, 6, 'per-run secrets deleted from every runner at the end')

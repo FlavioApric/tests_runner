@@ -40,7 +40,14 @@ No account permissions, no webhook, no events. The token for the source repo is 
 | Result public key | variable `FLEET_RECIPIENT` | public |
 | Result private key | `~/.qa-fleet/identity.key` on the owner's PC | the owner's sessions |
 | Allowed accounts | variable `FLEET_ACCOUNTS` | public |
-| Test secrets (test keys only) | environment secrets of `fleet`: `gh secret set STRIPE_TEST_KEY --env fleet` | copied per run to the runners whose units declare them |
+| Test keys (test keys only) | ONE environment secret `FLEET_TEST_SECRETS` (JSON `{"NAME":"value"}`), uploaded with `node cli/fleet.mjs test-secrets` from `~/.qa-fleet/test-secrets.json` | per run, only the names a unit declares are copied to the runners (as the single secret `FLEET_UNIT_SECRETS`) and deleted afterwards |
+
+## Test keys
+
+GitHub flags workflows that dump all secrets (`toJSON(secrets)`) as possibly malicious and refuses to run them, so the
+test keys live in one explicit JSON secret. Secrets are write-only on GitHub: keep the source of truth in
+`~/.qa-fleet/test-secrets.json` (outside any repo) and re-run `node cli/fleet.mjs test-secrets` after changing it.
+The tool rejects Claude/Anthropic credentials and `GITHUB_*`/`FLEET_*` names.
 
 ## Safety
 

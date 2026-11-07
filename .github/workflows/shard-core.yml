@@ -153,7 +153,7 @@ jobs:
 
       - name: Expose only the secrets this unit declared
         env:
-          ALL_SECRETS: ${{ toJSON(secrets) }}
+          UNIT_SECRETS: ${{ secrets.FLEET_UNIT_SECRETS }}
           NAMES: ${{ matrix.unit.secrets }}
         run: node fleet/cli/fleet.mjs secrets-env --names "$NAMES" --out "$RUNNER_TEMP/qaf-unit.env"
 

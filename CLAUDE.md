@@ -127,7 +127,8 @@ Instructions: `git show origin/fix:fix/PLAYBOOK.md`. Copy `scripts/fix`, `fix/`,
 - creating and pushing the app's **test branch** and **fix branches**, opening PRs on the app repo;
 - installing the tools listed above; filling `qa.config.json` and `fix.config.json` from the code;
 - the order of the fixes; running subagents in parallel (one worktree per writer);
-- `node cli/fleet.mjs keygen` if no key exists yet; `allow <login>` when the owner said that account lends a runner.
+- `node cli/fleet.mjs keygen` if no key exists yet; `allow <login>` when the owner said that account lends a runner;
+  `node cli/fleet.mjs test-secrets` to upload `~/.qa-fleet/test-secrets.json` (test keys the units declare).
 
 ## Ask the owner only for
 

@@ -65,7 +65,7 @@ jobs:
           FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           FLEET_RECIPIENT: ${{ vars.FLEET_RECIPIENT }}
           FLEET_ACCOUNTS: ${{ vars.FLEET_ACCOUNTS }}
-          FLEET_TEST_SECRETS: ${{ toJSON(secrets) }}
+          FLEET_TEST_SECRETS: ${{ secrets.FLEET_TEST_SECRETS }}
           FLEET_HOME: ${{ github.repository }}
           FLEET_SHA: ${{ github.sha }}
         run: node cli/fleet.mjs coordinate --out "$RUNNER_TEMP/fleet-out"
