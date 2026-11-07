@@ -127,7 +127,7 @@ Instructions: `git show origin/fix:fix/PLAYBOOK.md`. Copy `scripts/fix`, `fix/`,
 - creating and pushing the app's **test branch** and **fix branches**, opening PRs on the app repo;
 - installing the tools listed above; filling `qa.config.json` and `fix.config.json` from the code;
 - the order of the fixes; running subagents in parallel (one worktree per writer);
-- `node cli/fleet.mjs keygen` if no key exists yet; `allow <login>` when the owner said that account installed the App; `add-runner <owner>/tests_runner` when the owner hands over a runner token (it prompts for it: never put a token in a command or in chat);
+- `node cli/fleet.mjs keygen` if no key exists yet; `allow <login>` when the owner said that account installed the App; `add-account` when the owner hands over account tokens: ONE token per account is enough, the runner repo is created and registered by the command. If the owner pastes tokens in chat, write them (one per line) to a temp file in your scratchpad, run `node cli/fleet.mjs add-account --file <that file> --delete`, and never repeat them;
   `node cli/fleet.mjs test-secrets` to upload `~/.qa-fleet/test-secrets.json` (test keys the units declare).
 
 ## Ask the owner only for

@@ -3,6 +3,7 @@
 //   setup-app                      one time: create the fleet GitHub App (one click), store its key in the home repo
 //   keygen [--force]               one time: result key pair (private -> ~/.qa-fleet/identity.key, public -> vars.FLEET_RECIPIENT)
 //   test-secrets [--file f]        upload the test keys units declare (default ~/.qa-fleet/test-secrets.json: {"NAME":"value"})
+//   add-account [--file tokens.txt] [--delete]   ONE token per account -> its tests_runner repo is created if missing and registered
 //   add-runner owner/tests_runner  lend a repo with ONE fine-grained token instead of installing the App (prompts for the token)
 //   allow  login[,login]           let these accounts' App installations act as runners (vars.FLEET_ACCOUNTS)
 //   install-link                   the link to send to an account that lends a runner repo
@@ -54,6 +55,12 @@ try {
       break
     }
     case 'keygen': out(local.keygen({ force: flag('--force') })); break
+    case 'add-account': {
+      const rs = await local.addAccounts({ file: val('--file'), remove: flag('--delete') })
+      out(rs.map((x) => (x.ok ? `${x.repo}: ${x.created ? 'created and ' : ''}registered` : `FAILED: ${x.error}`)).join('\n'))
+      if (rs.some((x) => !x.ok)) process.exit(1)
+      break
+    }
     case 'add-runner': out(await local.addRunner({ repo: argv[1] })); break
     case 'test-secrets': out(local.testSecrets({ file: val('--file') })); break
     case 'allow': { const logins = csv(argv[1]); if (!logins.length) die('allow login[,login]'); out(local.allow({ logins })); break }

@@ -297,3 +297,34 @@ test('add-runner: checks the token sees a public repo, keeps one local file, upl
     for (const e of ex) assert.ok(!e.args.join(' ').includes(PAT))
   } finally { delete process.env.QA_FLEET_HOME }
 })
+
+test('add-account: one token -> the runner repo is created when missing, registered, idempotent', async () => {
+  const h = tmp(), ex = []
+  process.env.QA_FLEET_HOME = h
+  try {
+    const exec = (cmd, args, o = {}) => { ex.push({ args, input: o.input }); return { status: 0, stdout: '' } }
+    let exists = false
+    const calls = []
+    const fetchImpl = async (url, init = {}) => {
+      const p = new URL(url).pathname; calls.push(`${init.method ?? 'GET'} ${p}`)
+      assert.equal(init.headers.Authorization, `Bearer ${PAT}`)
+      if (p === '/user' && !init.method) return J({ login: 'neo' })
+      if (p === '/repos/neo/tests_runner') return exists ? J({ private: false }) : J({ message: 'Not Found' }, 404)
+      if (p === '/user/repos' && init.method === 'POST') { exists = true; const b = JSON.parse(init.body); assert.equal(b.private, false); assert.equal(b.name, 'tests_runner'); return J({}, 201) }
+      return J({}, 500)
+    }
+    const a = await local.addAccount({ token: PAT, home: HOME, exec, fetchImpl })
+    assert.deepEqual([a.login, a.repo, a.created], ['neo', 'neo/tests_runner', true])
+    assert.deepEqual(JSON.parse(ex.at(-1).input), [{ repo: 'neo/tests_runner', token: PAT }])
+    const b = await local.addAccount({ token: PAT, home: HOME, exec, fetchImpl })
+    assert.equal(b.created, false, 'second time: nothing is created')
+    assert.equal(JSON.parse(ex.at(-1).input).length, 1, 'no duplicate entry')
+    const file = path.join(h, 'tokens.txt')
+    fs.writeFileSync(file, `# comment\n${PAT}\nbad-short\n`)
+    const rs = await local.addAccounts({ file, home: HOME, exec, fetchImpl, remove: true })
+    assert.deepEqual(rs.map((x) => x.ok), [true, false]); assert.ok(fs.existsSync(file), 'the file is kept when one token failed')
+    const noCreate = async (url, init = {}) => (new URL(url).pathname === '/user' ? J({ login: 'fg' }) : new URL(url).pathname === '/user/repos' ? J({}, 403) : J({}, 404))
+    await assert.rejects(local.addAccount({ token: PAT, home: HOME, exec, fetchImpl: noCreate }), /create an empty PUBLIC repo/)
+    for (const e of ex) assert.ok(!e.args.join(' ').includes(PAT))
+  } finally { delete process.env.QA_FLEET_HOME }
+})

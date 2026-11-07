@@ -24,7 +24,7 @@ GitHub has no API to install an App on someone's account (the owner must accept 
 | | Install the App (recommended) | Token runner (no browser, no App) |
 |---|---|---|
 | The lending account does | opens the install link once, picks its `tests_runner` repo | creates the public repo and ONE fine-grained token on it, hands the token to the owner |
-| The owner runs | `node cli/fleet.mjs allow <login>` | `node cli/fleet.mjs add-runner <owner>/tests_runner` (prompts for the token) |
+| The owner runs | `node cli/fleet.mjs allow <login>` | `node cli/fleet.mjs add-account` (prompts for the token; creates the repo and registers it) |
 | Credentials | none stored; tokens minted per run, 1 hour | that token, stored as environment secret `FLEET_RUNNER_TOKENS` of the home repo |
 | Expiry | never | the token's expiry (renew: run `add-runner` again) |
 
