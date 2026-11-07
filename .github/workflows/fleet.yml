@@ -43,15 +43,16 @@ jobs:
       - name: Validate inputs
         run: |
           set -eu
-          ok() { printf '%s' "$1" | grep -Eq "$2"; }
+          ok() { [[ "$1" =~ $2 ]]; }
           ok "$IN_MODE" '^(run|status|provision)$' || { echo "::error::bad mode"; exit 1; }
           if [ "$IN_MODE" = run ]; then
             ok "$IN_SOURCE" '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "::error::source must be owner/name"; exit 1; }
-            ok "$IN_REF" '^[A-Za-z0-9._/-]{1,200}$' || { echo "::error::bad ref"; exit 1; }
+            ok "$IN_REF" '^[A-Za-z0-9._/-]+$' || { echo "::error::bad ref"; exit 1; }
             case "$IN_REF" in *..*|-*) echo "::error::bad ref"; exit 1;; esac
           fi
-          ok "$IN_ONLY" '^[A-Za-z0-9._,-]{0,4000}$' || { echo "::error::bad only"; exit 1; }
-          ok "$IN_TAGS" '^[A-Za-z0-9._,-]{0,400}$' || { echo "::error::bad tags"; exit 1; }
+          [ "${#IN_REF}" -le 200 ] && [ "${#IN_ONLY}" -le 4000 ] && [ "${#IN_TAGS}" -le 400 ] || { echo "::error::input too long"; exit 1; }
+          ok "$IN_ONLY" '^[A-Za-z0-9._,-]*$' || { echo "::error::bad only"; exit 1; }
+          ok "$IN_TAGS" '^[A-Za-z0-9._,-]*$' || { echo "::error::bad tags"; exit 1; }
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { persist-credentials: false }

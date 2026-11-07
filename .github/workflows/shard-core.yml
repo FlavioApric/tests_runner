@@ -41,14 +41,15 @@ jobs:
       - name: Validate inputs
         run: |
           set -eu
-          ok() { printf '%s' "$1" | grep -Eq "$2"; }
-          ok "$IN_RUN" '^[A-Za-z0-9._-]{1,64}$' || { echo "::error::bad run_id"; exit 1; }
-          ok "$IN_BATCH" '^[A-Za-z0-9._-]{1,64}$' || { echo "::error::bad batch"; exit 1; }
+          ok() { [[ "$1" =~ $2 ]]; }
+          [ "${#IN_RUN}" -le 64 ] && [ "${#IN_BATCH}" -le 64 ] && [ "${#IN_REF}" -le 200 ] && [ "${#IN_UNITS}" -le 4000 ] || { echo "::error::input too long"; exit 1; }
+          ok "$IN_RUN" '^[A-Za-z0-9._-]+$' || { echo "::error::bad run_id"; exit 1; }
+          ok "$IN_BATCH" '^[A-Za-z0-9._-]+$' || { echo "::error::bad batch"; exit 1; }
           ok "$IN_SOURCE" '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "::error::bad source"; exit 1; }
-          ok "$IN_REF" '^[A-Za-z0-9._/-]{1,200}$' || { echo "::error::bad ref"; exit 1; }
+          ok "$IN_REF" '^[A-Za-z0-9._/-]+$' || { echo "::error::bad ref"; exit 1; }
           case "$IN_REF" in *..*|-*) echo "::error::bad ref"; exit 1;; esac
-          ok "$IN_UNITS" '^[A-Za-z0-9._,-]{1,4000}$' || { echo "::error::bad units"; exit 1; }
-          ok "$IN_MAXP" '^[0-9]{1,3}$' || { echo "::error::bad max_parallel"; exit 1; }
+          ok "$IN_UNITS" '^[A-Za-z0-9._,-]+$' || { echo "::error::bad units"; exit 1; }
+          ok "$IN_MAXP" '^[0-9]+$' || { echo "::error::bad max_parallel"; exit 1; }
           ok "$IN_FLEET" '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "::error::bad fleet_repo"; exit 1; }
           ok "$IN_SHA" '^[0-9a-f]{40}$' || { echo "::error::bad fleet_sha"; exit 1; }
           ok "$RECIPIENT" '^qafpub1:[A-Za-z0-9_-]{20,200}$' || { echo "::error::bad recipient (on your PC: node cli/fleet.mjs keygen)"; exit 1; }
