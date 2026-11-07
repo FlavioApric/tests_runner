@@ -44,7 +44,7 @@ Every project value used below (base branch, card folder, id pattern, delivery t
 `gate.mjs` prints it: the highest type in `deliveryOrder` that a changed file maps to (`deliveryRules`), plus the other parts. Example order: `none` < `web` < `function` < `migration` < `native`.
 
 ## 7. Deliver
-- Commit as `fix(<area>): <what> (<id>)`, ending with the Co-Authored-By line the session gives. Push the branch only when the owner allows pushes, then open the PR from [`templates/PR.md`](templates/PR.md).
+- Commit as `fix(<area>): <what> (<id>)`, ending with the Co-Authored-By line the session gives. Push the fix branch and open the PR from [`templates/PR.md`](templates/PR.md): pre-authorised, the PR is where the owner reviews. Never merge it yourself.
 - `node scripts/fix/ship.mjs <PR>` (or `--local` before a PR exists) checks the change (branch name, card, regression test, log row, test ticket, no result files, no blocking type) and prints the owner action from `ownerActions`.
 - Read-only runner checks Claude may start are listed in `readOnlyChecks` (for example the `verify.yml` template in [`runner-templates/`](runner-templates/)).
 - Everything that writes to production is the owner's: one command, or one approval of a gated workflow. Tell the owner clearly what it does and what to check afterwards.

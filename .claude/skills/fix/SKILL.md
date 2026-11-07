@@ -12,7 +12,7 @@ Read `fix/PLAYBOOK.md` and the project's `fix.config.json` first (`fix/CONFIG.md
 3. Locate with `graphify query` and `investigate-first`. Write the cause in the card before any code change.
 4. Red test at the lowest layer (a path in `testPaths`), then the minimal fix (`surgical-patch`; `safe-refactor` only if code must move).
 5. `node scripts/fix/gate.mjs`. Read the output. A blocking type (for example native): stop and tell the owner the fast path cannot carry it.
-6. Commit `fix(<area>): <what> (<id>)`. Push and open the PR from `fix/templates/PR.md` only if the owner allows pushes; then `/fix-ship`.
+6. Commit `fix(<area>): <what> (<id>)`. Push the fix branch and open the PR from `fix/templates/PR.md` (pre-authorised: the PR is the owner's review point; merging is not); then `/fix-ship`.
 7. Test ticket (`PLAYBOOK.md` step 8): in a worktree of `testsBranch`, look for a requirement and case that cover the bug; add or strengthen them with that branch's tools; tests and plans only, no results. Link PR and commit both ways.
 
 Several bugs: locate each (so its files are known), write `bugs.json`, run `node scripts/fix/fix-batch.mjs bugs.json --dry`, then without `--dry`, and dispatch one sub-agent per brief of a wave (`dispatching-parallel-agents`, each in its worktree: `git-worktree-isolation`).
